@@ -41,15 +41,23 @@
             <div class="grid">
                 <section class="panel mc-panel">
                     <div class="panel-header">
-                        <div class="panel-title">👥 JUGADORES ONLINE</div>
-                        <div class="panel-action" onclick="refreshAll()">↻</div>
+                        <div class="panel-title">
+                            <span class="icon-slot icon-title" data-icon="team" data-size="18"></span>
+                            JUGADORES ONLINE
+                        </div>
+                        <button class="panel-action" onclick="refreshAll()" aria-label="Actualizar">
+                            <span class="icon-slot" data-icon="reload" data-size="18"></span>
+                        </button>
                     </div>
                     <div id="players-list" class="list"></div>
                 </section>
 
                 <section class="panel mc-panel">
                     <div class="panel-header">
-                        <div class="panel-title">⏺ GRABANDO</div>
+                        <div class="panel-title">
+                            <span class="icon-slot icon-recording" data-icon="recording" data-size="18" data-color="#ff6b6b"></span>
+                            GRABANDO
+                        </div>
                     </div>
                     <div id="active-recordings" class="list"></div>
                 </section>
@@ -57,7 +65,10 @@
 
             <section class="panel mc-panel large">
                 <div class="panel-header">
-                    <div class="panel-title">📼 EVIDENCIAS GUARDADAS</div>
+                    <div class="panel-title">
+                        <span class="icon-slot icon-title" data-icon="folder" data-size="18"></span>
+                        EVIDENCIAS GUARDADAS
+                    </div>
                     <div class="panel-sub">Haz clic en "VER" para reproducir</div>
                 </div>
                 <div id="saved-recordings" class="evidence-list"></div>
@@ -71,11 +82,16 @@
         <div class="viewer-container">
             <div class="viewer-header">
                 <div>
-                    <h3>🎥 REPRODUCCIÓN</h3>
+                    <h3>
+                        <span class="icon-slot icon-title" data-icon="video" data-size="20"></span>
+                        REPRODUCCIÓN
+                    </h3>
                     <div id="viewer-info" class="viewer-info"></div>
                 </div>
                 <div class="viewer-header-actions">
-                    <button class="close-btn" onclick="closePlayer()">×</button>
+                    <button class="close-btn" onclick="closePlayer()" aria-label="Cerrar">
+                        <span class="icon-slot" data-icon="close" data-size="24"></span>
+                    </button>
                 </div>
             </div>
 
@@ -99,8 +115,10 @@
                     <div class="side-section">
                         <strong>CONTROLES</strong>
                         <div class="viewer-controls">
-                            <button class="mc-btn mc-btn-primary small" id="play-btn" onclick="playerToggle()">▶</button>
-                            <button class="mc-btn mc-btn-ghost small" onclick="playerReset()">⟲</button>
+                            <button class="mc-btn mc-btn-primary small icon-btn" id="play-btn" onclick="playerToggle()" aria-label="Reproducir"></button>
+                            <button class="mc-btn mc-btn-ghost small icon-btn" onclick="playerReset()" aria-label="Reiniciar">
+                                <span class="icon-slot" data-icon="reload" data-size="16"></span>
+                            </button>
                         </div>
                         <div class="speed-controls">
                             <button onclick="playerSpeed(0.5)">0.5x</button>
@@ -123,6 +141,7 @@
     </div>
 
     <div id="toast" class="toast"></div>
+    <script type="module" src="icons-module.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

@@ -240,6 +240,7 @@ class DashboardServer(
         val resources = mapOf(
             "index.html" to "/static/index.html",
             "style.css" to "/static/style.css",
+            "icons-module.js" to "/static/icons-module.js",
             "app.js" to "/static/app.js"
         )
 

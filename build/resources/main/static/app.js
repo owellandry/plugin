@@ -29,7 +29,17 @@ async function tryAutoLogin() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', tryAutoLogin);
+document.addEventListener('DOMContentLoaded', function() {
+    var boot = function() {
+        if (window.EvidexIcons) EvidexIcons.setPlayButton(false);
+        tryAutoLogin();
+    };
+    if (window.EvidexIcons && EvidexIcons.ready) {
+        EvidexIcons.ready.then(boot);
+    } else {
+        boot();
+    }
+});
 
 async function refreshAll() {
     try {
@@ -95,10 +105,11 @@ function renderSavedRecordings(recordings) {
             <div style="display:flex;align-items:center;gap:10px">
                 <div class="evidence-duration">${formatDuration(r.duration)}</div>
                 <button class="mc-btn mc-btn-primary small" onclick="openPlayer('${r.id}')">VER VIDEO</button>
-                <button class="mc-btn mc-btn-danger small" onclick="deleteEvidence('${r.id}')">×</button>
+                <button class="mc-btn mc-btn-danger small icon-btn" onclick="deleteEvidence('${r.id}')" aria-label="Eliminar"><span class="icon-slot" data-icon="delete" data-size="14"></span></button>
             </div>
         </div>
     `).join('');
+    if (window.EvidexIcons) EvidexIcons.mountAll(el);
 }
 
 function deleteEvidence(id) {
@@ -158,7 +169,7 @@ async function openPlayer(id) {
     player.playing = false;
     player.speed = 1;
     player.pausedAt = 0;
-    document.getElementById('play-btn').textContent = '▶';
+    if (window.EvidexIcons) EvidexIcons.setPlayButton(false);
 
     document.getElementById('viewer-info').textContent = 'Cargando fotogramas...';
 
@@ -235,7 +246,7 @@ function closePlayer() {
 function playerToggle() {
     if (player.frames.length === 0) return;
     player.playing = !player.playing;
-    document.getElementById('play-btn').textContent = player.playing ? '⏸' : '▶';
+    if (window.EvidexIcons) EvidexIcons.setPlayButton(player.playing);
     if (player.playing) {
         if (player.index >= player.frames.length - 1) {
             player.index = 0;
@@ -253,7 +264,7 @@ function playerReset() {
     player.index = 0;
     if (player.animId) cancelAnimationFrame(player.animId);
     player.animId = null;
-    document.getElementById('play-btn').textContent = '▶';
+    if (window.EvidexIcons) EvidexIcons.setPlayButton(false);
     document.getElementById('scrubber').value = 0;
     if (player.frames.length > 0) drawFrame(player.frames[0]);
     updateTimeDisplay();
@@ -281,7 +292,7 @@ function playerLoop() {
     }
     if (targetIdx >= player.frames.length - 1) {
         player.playing = false;
-        document.getElementById('play-btn').textContent = '▶';
+        if (window.EvidexIcons) EvidexIcons.setPlayButton(false);
         targetIdx = player.frames.length - 1;
         document.getElementById('scrubber').value = player.frames.length - 1;
         drawFrame(player.frames[targetIdx]);
