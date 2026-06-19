@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evidex • Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="dashboard-view">
+        <nav class="navbar">
+            <div class="nav-left">
+                <div class="nav-logo">
+                    <div class="logo-block small"></div>
+                    <span>EVIDEX</span>
+                </div>
+                <span class="nav-tag">DASHBOARD DE EVIDENCIAS</span>
+            </div>
+            <div class="nav-right">
+                <span id="status-badge" class="badge badge-idle">CONECTANDO...</span>
+            </div>
+        </nav>
+
+        <div class="container">
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total">0</div>
+                    <div class="stat-label">EVIDENCIAS</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-active">0</div>
+                    <div class="stat-label">GRABANDO AHORA</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-players">0</div>
+                    <div class="stat-label">JUGADORES ONLINE</div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <section class="panel mc-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">👥 JUGADORES ONLINE</div>
+                        <div class="panel-action" onclick="refreshAll()">↻</div>
+                    </div>
+                    <div id="players-list" class="list"></div>
+                </section>
+
+                <section class="panel mc-panel">
+                    <div class="panel-header">
+                        <div class="panel-title">⏺ GRABANDO</div>
+                    </div>
+                    <div id="active-recordings" class="list"></div>
+                </section>
+            </div>
+
+            <section class="panel mc-panel large">
+                <div class="panel-header">
+                    <div class="panel-title">📼 EVIDENCIAS GUARDADAS</div>
+                    <div class="panel-sub">Haz clic en "VER" para reproducir</div>
+                </div>
+                <div id="saved-recordings" class="evidence-list"></div>
+            </section>
+
+            <footer class="dash-footer">Evidex v1.0.0 • Dashboard • Puerto 9090</footer>
+        </div>
+    </div>
+
+    <div id="player-modal" class="modal viewer-modal" style="display:none">
+        <div class="viewer-container">
+            <div class="viewer-header">
+                <div>
+                    <h3>🎥 REPRODUCCIÓN</h3>
+                    <div id="viewer-info" class="viewer-info"></div>
+                </div>
+                <div class="viewer-header-actions">
+                    <button class="close-btn" onclick="closePlayer()">×</button>
+                </div>
+            </div>
+
+            <div class="viewer-main">
+                <div class="canvas-container">
+                    <canvas id="replay-canvas"></canvas>
+                </div>
+                <div class="viewer-side">
+                    <div class="side-section">
+                        <strong>POSICIÓN</strong>
+                        <div id="player-pos" class="info-box">X: — Y: — Z: —</div>
+                    </div>
+                    <div class="side-section">
+                        <strong>ACCIÓN</strong>
+                        <div id="player-flags" class="info-box">—</div>
+                    </div>
+                    <div class="side-section">
+                        <strong>EQUIPO</strong>
+                        <div id="player-equip" class="info-box">—</div>
+                    </div>
+                    <div class="side-section">
+                        <strong>CONTROLES</strong>
+                        <div class="viewer-controls">
+                            <button class="mc-btn mc-btn-primary small" id="play-btn" onclick="playerToggle()">▶</button>
+                            <button class="mc-btn mc-btn-ghost small" onclick="playerReset()">⟲</button>
+                        </div>
+                        <div class="speed-controls">
+                            <button onclick="playerSpeed(0.5)">0.5x</button>
+                            <button onclick="playerSpeed(1)" class="active">1x</button>
+                            <button onclick="playerSpeed(2)">2x</button>
+                            <button onclick="playerSpeed(5)">5x</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="viewer-timeline">
+                <input type="range" id="scrubber" min="0" max="100" step="0.1" value="0">
+                <div class="time-display">
+                    <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
+                    <span id="frame-info" style="margin-left:12px;opacity:.6"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script src="app.js"></script>
+</body>
+</html>

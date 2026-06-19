@@ -1,0 +1,27 @@
+database:
+  type: sqlite
+  path: evidex.db
+  host: localhost
+  port: 3306
+  name: evidex
+  user: evidex
+  password: ''
+  pool-size: 10
+  params: ''
+
+storage:
+  frames-dir: frames
+
+recording:
+  tick-interval: 2
+  max-duration: 3600000
+
+cleanup:
+  enabled: true
+  retention-days: 30
+  interval: 3600
+
+dashboard:
+  enabled: true
+  port: 9090
+  bind-address: 0.0.0.0
