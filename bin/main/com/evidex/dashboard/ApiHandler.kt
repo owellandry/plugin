@@ -61,10 +61,37 @@ class ApiHandler(
     fun getPlayers(): NanoHTTPD.Response {
         val future = CompletableFuture<String>()
         Bukkit.getScheduler().runTask(plugin, Runnable {
+            val liveVl = if (plugin.hasDetection()) {
+                plugin.detectionManager.getLiveVl().associateBy { it.playerName }
+            } else emptyMap()
             val players = Bukkit.getOnlinePlayers().map { player ->
-                player.name
+                val vl = liveVl[player.name]
+                val checksJson = vl?.checks?.entries?.joinToString(",") {
+                    """"${it.key}":${it.value}"""
+                } ?: ""
+                val checks = if (checksJson.isEmpty()) "{}" else "{$checksJson}"
+                """{"name":"${escapeJson(player.name)}","ping":${player.ping},"totalVl":${vl?.totalVl ?: 0},"checks":$checks,"isRecording":${vl?.isRecording ?: false},"recordingSource":"${vl?.recordingSource ?: ""}"}"""
             }
-            future.complete(players.joinToString(",", "[", "]") { "\"${it}\"" })
+            future.complete("[${players.joinToString(",")}]")
+        })
+        return jsonResponse(future.get())
+    }
+
+    fun getStats(): NanoHTTPD.Response {
+        val future = CompletableFuture<String>()
+        Bukkit.getScheduler().runTask(plugin, Runnable {
+            val todayStart = startOfTodayMillis()
+            val alertsToday = if (plugin.hasViolationRepository()) {
+                plugin.violationRepository.countSince(todayStart)
+            } else 0
+            val flaggedPlayers = if (plugin.hasViolationRepository()) {
+                plugin.violationRepository.countDistinctPlayersSince(todayStart)
+            } else 0
+            val autoRecordings = plugin.recordingManager.getAllRecordingMetadata()
+                .count { it.source == "AUTO" }
+            future.complete(
+                """{"alertsToday":$alertsToday,"flaggedPlayers":$flaggedPlayers,"autoRecordings":$autoRecordings}"""
+            )
         })
         return jsonResponse(future.get())
     }
@@ -86,7 +113,7 @@ class ApiHandler(
             val metas = plugin.recordingManager.getAllRecordingMetadata()
             val list = metas.map { meta ->
                 val duration = meta.endTimestamp?.let { it / 1000.0 } ?: 0.0
-                """{"id":"${meta.id}","targetPlayer":"${meta.playerName}","duration":$duration,"frameCount":${meta.frameCount},"world":"${meta.world ?: ""}","createdAt":${meta.createdAt}}"""
+                """{"id":"${meta.id}","targetPlayer":"${escapeJson(meta.playerName)}","duration":$duration,"frameCount":${meta.frameCount},"world":"${escapeJson(meta.world ?: "")}","createdAt":${meta.createdAt},"source":"${meta.source}","triggerCheck":"${escapeJson(meta.triggerCheck ?: "")}","peakVl":${meta.peakVl},"violationCount":${meta.violationCount}}"""
             }
             future.complete("[${list.joinToString(",")}]")
         })
@@ -191,6 +218,64 @@ class ApiHandler(
         return jsonResponse(future.get())
     }
 
+    fun getReplayStatus(viewerName: String?): NanoHTTPD.Response {
+        val future = CompletableFuture<String>()
+        Bukkit.getScheduler().runTask(plugin, Runnable {
+            val sessions = plugin.replayManager.getActiveSessions()
+            val filtered = if (viewerName.isNullOrBlank()) {
+                sessions
+            } else {
+                sessions.filter { it.viewer.name.equals(viewerName, ignoreCase = true) }
+            }
+            val list = filtered.map { sessionToJson(it) }
+            future.complete("[${list.joinToString(",")}]")
+        })
+        return jsonResponse(future.get())
+    }
+
+    fun pauseReplay(viewerName: String): NanoHTTPD.Response =
+        replayControl(viewerName) { viewer -> plugin.replayManager.pause(viewer) }
+
+    fun resumeReplay(viewerName: String): NanoHTTPD.Response =
+        replayControl(viewerName) { viewer -> plugin.replayManager.resume(viewer) }
+
+    fun setReplaySpeed(viewerName: String, speed: Double): NanoHTTPD.Response =
+        replayControl(viewerName) { viewer -> plugin.replayManager.setSpeed(viewer, speed) }
+
+    fun skipReplayFlag(viewerName: String): NanoHTTPD.Response =
+        replayControl(viewerName) { viewer -> plugin.replayManager.skipToNextFlag(viewer) }
+
+    private fun replayControl(
+        viewerName: String,
+        block: (org.bukkit.entity.Player) -> Unit
+    ): NanoHTTPD.Response {
+        if (viewerName.isBlank()) return errorResponse("Selecciona un admin online")
+
+        val future = CompletableFuture<String>()
+        Bukkit.getScheduler().runTask(plugin, Runnable {
+            val viewer = Bukkit.getPlayer(viewerName)
+            if (viewer == null) {
+                future.complete("""{"success":false,"error":"El admin no está en línea"}""")
+                return@Runnable
+            }
+            if (!viewer.hasPermission(ADMIN_PERMISSION)) {
+                future.complete("""{"success":false,"error":"Solo admins con permiso evidex.admin"}""")
+                return@Runnable
+            }
+            val session = plugin.replayManager.getSession(viewer)
+            if (session == null || !session.isActive) {
+                future.complete("""{"success":false,"error":"No hay replay activo para ${viewer.name}"}""")
+                return@Runnable
+            }
+            block(viewer)
+            future.complete("""{"success":true,"session":${sessionToJson(session)}}""")
+        })
+        return jsonResponse(future.get())
+    }
+
+    private fun sessionToJson(session: com.evidex.playback.ReplaySession): String =
+        """{"viewer":"${escapeJson(session.viewer.name)}","targetPlayer":"${escapeJson(session.recording.playerName)}","recordingId":${session.recording.recordingId},"frameIndex":${session.frameIndex},"frameCount":${session.frameCount},"paused":${session.isPaused},"speed":${session.playbackSpeed},"active":${session.isActive}}"""
+
     fun deleteRecording(id: Long): NanoHTTPD.Response {
         if (id <= 0) return errorResponse("ID inválido")
 
@@ -205,6 +290,70 @@ class ApiHandler(
         })
         return jsonResponse(future.get())
     }
+
+    fun getViolations(limit: Int): NanoHTTPD.Response {
+        val future = CompletableFuture<String>()
+        Bukkit.getScheduler().runTask(plugin, Runnable {
+            val list = if (plugin.hasViolationRepository()) {
+                plugin.violationRepository.findRecent(limit.coerceIn(1, 200))
+            } else emptyList()
+            future.complete("[${list.joinToString(",") { violationToJson(it) }}]")
+        })
+        return jsonResponse(future.get())
+    }
+
+    fun getViolationsLive(): NanoHTTPD.Response {
+        val future = CompletableFuture<String>()
+        Bukkit.getScheduler().runTask(plugin, Runnable {
+            val list = if (plugin.hasDetection()) {
+                plugin.detectionManager.getLiveVl()
+            } else emptyList()
+            val json = list.joinToString(",") { vl ->
+                val checks = vl.checks.entries.joinToString(",") { """"${it.key}":${it.value}""" }
+                val checksObj = if (checks.isEmpty()) "{}" else "{$checks}"
+                """{"playerName":"${escapeJson(vl.playerName)}","playerUuid":"${vl.playerUuid}","totalVl":${vl.totalVl},"checks":$checksObj,"isRecording":${vl.isRecording},"recordingSource":"${vl.recordingSource ?: ""}"}"""
+            }
+            future.complete("[$json]")
+        })
+        return jsonResponse(future.get())
+    }
+
+    fun getViolationsForPlayer(playerName: String): NanoHTTPD.Response {
+        val future = CompletableFuture<String>()
+        Bukkit.getScheduler().runTask(plugin, Runnable {
+            val list = if (plugin.hasViolationRepository()) {
+                plugin.violationRepository.findByPlayer(playerName)
+            } else emptyList()
+            future.complete("[${list.joinToString(",") { violationToJson(it) }}]")
+        })
+        return jsonResponse(future.get())
+    }
+
+    fun getViolationsForRecording(recordingId: Long): NanoHTTPD.Response {
+        val future = CompletableFuture<String>()
+        Bukkit.getScheduler().runTask(plugin, Runnable {
+            val list = if (plugin.hasViolationRepository()) {
+                plugin.violationRepository.findByRecordingId(recordingId)
+            } else emptyList()
+            future.complete("[${list.joinToString(",") { violationToJson(it) }}]")
+        })
+        return jsonResponse(future.get())
+    }
+
+    private fun violationToJson(v: com.evidex.detection.ViolationRecord): String =
+        """{"id":${v.id},"playerName":"${escapeJson(v.playerName)}","checkName":"${escapeJson(v.checkName)}","category":"${v.category.name}","vlAdded":${v.vlAdded},"vlTotal":${v.vlTotal},"severity":"${v.severity.name}","info":${v.infoJson.ifBlank { "{}" }},"recordingId":${v.recordingId ?: "null"},"world":"${escapeJson(v.world ?: "")}","timestamp":${v.timestamp}}"""
+
+    private fun startOfTodayMillis(): Long {
+        val cal = java.util.Calendar.getInstance()
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+
+    private fun escapeJson(s: String): String =
+        s.replace("\\", "\\\\").replace("\"", "\\\"")
 
     private fun jsonResponse(json: String, status: NanoHTTPD.Response.Status = NanoHTTPD.Response.Status.OK): NanoHTTPD.Response {
         val response = NanoHTTPD.newFixedLengthResponse(status, "application/json", json)

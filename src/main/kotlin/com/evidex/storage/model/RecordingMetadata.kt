@@ -15,5 +15,9 @@ data class RecordingMetadata(
     val videoFilePath: String = "",
     val videoStatus: String = "pending",
     val status: String = "recording",
+    val source: String = "MANUAL",
+    val triggerCheck: String? = null,
+    val peakVl: Int = 0,
+    val violationCount: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
 )

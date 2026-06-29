@@ -40,7 +40,7 @@ class PathSnapshotEnricher(
                         worldSnapshotService.blockKey(x, y, z)
                     }
                 } catch (e: Exception) {
-                    plugin.logger.warning("Failed to preload world for path snapshot ($playerName): ${e.message}")
+                    plugin.log.warn("Precarga de mundo fallida ($playerName): ${e.message}")
                 }
             }
 
@@ -92,9 +92,8 @@ class PathSnapshotEnricher(
         }, tickInterval, tickInterval)
 
         activeTasks[recordingId] = task
-        plugin.logger.info(
-            "Scheduled path snapshot for $playerName: ${samplePoints.size - pointIndex} sample points " +
-                "(every ${tickInterval} tick(s), non-blocking)"
+        plugin.log.debug(
+            "Snapshot de ruta: $playerName — ${samplePoints.size - pointIndex} muestras"
         )
     }
 
@@ -121,11 +120,11 @@ class PathSnapshotEnricher(
                 if (metadata != null) {
                     recordingRepository.update(metadata.copy(worldFilePath = worldPath))
                 }
-                plugin.logger.info(
-                    "World path snapshot for $playerName: ${snapshot.blocks.size} blocks (async complete)"
+                plugin.log.info(
+                    "Snapshot de ruta completado: $playerName — ${snapshot.blocks.size} bloques"
                 )
             } catch (e: Exception) {
-                plugin.logger.warning("Failed async path snapshot for $playerName: ${e.message}")
+                plugin.log.warn("Snapshot de ruta fallido ($playerName): ${e.message}")
             }
         })
     }

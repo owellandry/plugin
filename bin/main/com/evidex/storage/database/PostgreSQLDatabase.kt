@@ -44,5 +44,8 @@ class PostgreSQLDatabase(config: ConfigManager) : PooledDatabase(config) {
             )
         """)
         executeUpdate("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+
+        DetectionSchema.applyMigrations(this)
+        DetectionSchema.createViolationsTablePostgres(this)
     }
 }

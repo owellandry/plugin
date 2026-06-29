@@ -1,3 +1,5 @@
+import org.gradle.api.attributes.java.TargetJvmVersion
+
 plugins {
     kotlin("jvm") version "2.3.20"
     id("com.gradleup.shadow") version "9.0.0-beta11"
@@ -6,9 +8,27 @@ plugins {
 base.archivesName = "evidex-plugin"
 version = "1.0.0"
 
+val paperApiVersion = "26.2.build.31-alpha"
+
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    toolchain.languageVersion.set(JavaLanguageVersion.of(25))
+}
+
+kotlin {
+    jvmToolchain(21)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+    }
+}
+
+configurations.named("compileClasspath") {
+    attributes {
+        attribute(TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 25)
+    }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+    enabled = false
 }
 
 repositories {
@@ -19,10 +39,13 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT")
+    compileOnly("io.papermc.paper:paper-api:$paperApiVersion")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
-    implementation("io.github.juliarn:npc-lib-bukkit:3.0.0-beta13")
-    implementation("com.github.retrooper:packetevents-spigot:2.11.2")
+    implementation("io.github.juliarn:npc-lib-bukkit:3.0.0-beta.16")
+    implementation("com.github.retrooper:packetevents-spigot:2.13.0")
+
+    testImplementation(kotlin("test"))
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
 
     // Database
     implementation("org.xerial:sqlite-jdbc:3.45.3.0")
@@ -30,12 +53,6 @@ dependencies {
     implementation("com.mysql:mysql-connector-j:8.3.0")
     implementation("org.postgresql:postgresql:42.7.3")
     implementation("org.mariadb.jdbc:mariadb-java-client:3.3.3")
-}
-
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
-    }
 }
 
 tasks.processResources {
@@ -71,6 +88,10 @@ tasks.shadowJar {
     exclude("META-INF/AL2.0")
     exclude("META-INF/LGPL2.1")
     mergeServiceFiles()
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 tasks.build {

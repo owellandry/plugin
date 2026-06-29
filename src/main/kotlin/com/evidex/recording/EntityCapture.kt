@@ -3,6 +3,7 @@ package com.evidex.recording
 import com.evidex.config.ConfigManager
 import com.evidex.math.Angle
 import com.evidex.math.Vec3d
+import com.evidex.util.BukkitExtensions
 import org.bukkit.entity.Entity
 import org.bukkit.entity.LivingEntity
 import org.bukkit.entity.Player
@@ -111,9 +112,7 @@ object EntityCapture {
 
     private fun fromLivingEntity(entity: LivingEntity): NearbyEntityFrame {
         val loc = entity.location
-        val displayName = entity.customName()?.let {
-            net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText().serialize(it)
-        } ?: entity.type.name
+        val displayName = BukkitExtensions.livingEntityLabel(entity)
         return NearbyEntityFrame(
             entityType = entity.type.name,
             name = displayName,

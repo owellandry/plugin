@@ -7,8 +7,9 @@ import java.io.InputStream
 
 class DashboardServer(
     private val plugin: EvidexPlugin,
-    port: Int = 9090
-) : NanoHTTPD(port) {
+    port: Int = 9090,
+    bindAddress: String = "0.0.0.0"
+) : NanoHTTPD(bindAddress, port) {
 
     private val authManager = AuthManager(plugin, plugin.database)
     private val apiHandler = ApiHandler(plugin, authManager)
@@ -17,8 +18,9 @@ class DashboardServer(
     init {
         staticDir.mkdirs()
         extractStaticFiles()
+        val effectiveBindAddress = bindAddress.trim().ifBlank { "0.0.0.0" }
         start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
-        plugin.logger.info("Dashboard started on http://0.0.0.0:$port (with auth)")
+        plugin.log.debug("Dashboard escuchando en http://$effectiveBindAddress:$port")
     }
 
     override fun serve(session: IHTTPSession): Response {
@@ -57,17 +59,16 @@ class DashboardServer(
                 uri == "/api/auth/login" && method == Method.POST -> {
                     val uname = params["username"] ?: ""
                     val pw = params["password"] ?: ""
-                    plugin.logger.info("[Dashboard] Login attempt for user='${uname}' (pw len=${pw.length})")
                     val result = authManager.login(uname, pw)
                     if (result.success && result.token != null) {
-                        plugin.logger.info("[Dashboard] Login SUCCESS for '${result.username}' mustChange=${result.mustChange}")
+                        plugin.log.info("Dashboard: sesión iniciada (${result.username})")
                         val json = """{"success":true,"token":"${result.token}","mustChange":${result.mustChange},"username":"${result.username}"}"""
                         val resp = newFixedLengthResponse(Response.Status.OK, "application/json", json)
                         resp.addHeader("Set-Cookie", "evidex_session=${result.token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800")
                         addCors(resp)
                         resp
                     } else {
-                        plugin.logger.info("[Dashboard] Login FAILED for '${uname}': ${result.error}")
+                        plugin.log.debug("Dashboard: inicio de sesión fallido ($uname)")
                         val msg = result.error ?: "Usuario o contraseña incorrectos"
                         val r = newFixedLengthResponse(Response.Status.OK, "application/json", """{"success":false,"error":"$msg"}""")
                         addCors(r)
@@ -87,7 +88,21 @@ class DashboardServer(
                     }
                     when {
                         uri == "/api/players" && method == Method.GET -> apiHandler.getPlayers()
+                        uri == "/api/stats" && method == Method.GET -> apiHandler.getStats()
                         uri == "/api/admins" && method == Method.GET -> apiHandler.getAdmins()
+                        uri == "/api/violations/live" && method == Method.GET -> apiHandler.getViolationsLive()
+                        uri == "/api/violations" && method == Method.GET -> {
+                            val limit = session.parameters["limit"]?.firstOrNull()?.toIntOrNull() ?: 50
+                            apiHandler.getViolations(limit)
+                        }
+                        uri.startsWith("/api/violations/") && method == Method.GET -> {
+                            val player = uri.removePrefix("/api/violations/")
+                            apiHandler.getViolationsForPlayer(player)
+                        }
+                        uri.matches(Regex("^/api/recordings/\\d+/violations$")) && method == Method.GET -> {
+                            val id = uri.removePrefix("/api/recordings/").removeSuffix("/violations").toLongOrNull() ?: 0L
+                            apiHandler.getViolationsForRecording(id)
+                        }
                         uri == "/api/recordings" && method == Method.GET -> apiHandler.getRecordings()
                         uri == "/api/recordings/active" && method == Method.GET -> apiHandler.getActiveRecordings()
                         uri == "/api/record/start" && method == Method.POST -> apiHandler.startRecording(params["player"] ?: "")
@@ -95,6 +110,21 @@ class DashboardServer(
                         uri == "/api/replay/start-id" && method == Method.POST ->
                             apiHandler.startReplayById((params["id"] ?: "0").toLongOrNull() ?: 0L, params["viewer"] ?: "")
                         uri == "/api/replay/stop" && method == Method.POST -> apiHandler.stopReplay(params["viewer"] ?: params["admin"] ?: "")
+                        uri == "/api/replay/status" && method == Method.GET -> {
+                            val viewer = session.parameters["viewer"]?.firstOrNull()
+                            apiHandler.getReplayStatus(viewer)
+                        }
+                        uri == "/api/replay/pause" && method == Method.POST ->
+                            apiHandler.pauseReplay(params["viewer"] ?: params["admin"] ?: "")
+                        uri == "/api/replay/resume" && method == Method.POST ->
+                            apiHandler.resumeReplay(params["viewer"] ?: params["admin"] ?: "")
+                        uri == "/api/replay/speed" && method == Method.POST ->
+                            apiHandler.setReplaySpeed(
+                                params["viewer"] ?: params["admin"] ?: "",
+                                (params["speed"] ?: "1").toDoubleOrNull() ?: 1.0
+                            )
+                        uri == "/api/replay/skip" && method == Method.POST ->
+                            apiHandler.skipReplayFlag(params["viewer"] ?: params["admin"] ?: "")
                         uri == "/api/recordings/delete" && method == Method.POST ->
                             apiHandler.deleteRecording((params["id"] ?: "0").toLongOrNull() ?: 0L)
                         uri.matches(Regex("^/api/recordings/\\d+$")) && method == Method.DELETE -> {
@@ -106,7 +136,7 @@ class DashboardServer(
                 }
             }
         } catch (e: Exception) {
-            plugin.logger.warning("API error: ${e.message}")
+            plugin.log.warn("Error en API del dashboard: ${e.message}")
             jsonError(e.message ?: "Server error", Response.Status.INTERNAL_ERROR)
         }
     }
@@ -132,7 +162,7 @@ class DashboardServer(
                 addCors(response)
                 return response
             } catch (e: Exception) {
-                plugin.logger.warning("[Evidex] Error serving static from resources: ${e.message}")
+                plugin.log.warn("Error sirviendo recurso estático: ${e.message}")
             } finally {
                 stream.close()
             }
@@ -199,14 +229,14 @@ class DashboardServer(
     }
 
     private fun extractStaticFiles() {
-        plugin.logger.info("[Evidex] Extracting fresh static dashboard files...")
+        plugin.log.debug("Extrayendo archivos estáticos del dashboard…")
 
         try {
             if (staticDir.exists()) {
                 staticDir.deleteRecursively()
             }
         } catch (e: Exception) {
-            plugin.logger.warning("[Evidex] Could not fully delete old static dir: ${e.message}")
+            plugin.log.warn("No se pudo limpiar carpeta static anterior: ${e.message}")
         }
         staticDir.mkdirs()
 
@@ -225,21 +255,20 @@ class DashboardServer(
                     val target = File(staticDir, name)
                     target.writeBytes(stream.readBytes())
                     extractedCount++
-                    plugin.logger.info("[Evidex] Extracted $name to ${target.absolutePath}")
                 } catch (e: Exception) {
-                    plugin.logger.warning("[Evidex] Failed to extract $name: ${e.message}")
+                    plugin.log.warn("No se pudo extraer $name: ${e.message}")
                 } finally {
                     stream.close()
                 }
             } else {
-                plugin.logger.warning("[Evidex] Resource not found in jar: $resourcePath")
+                plugin.log.warn("Recurso no encontrado en JAR: $resourcePath")
             }
         }
-        plugin.logger.info("[Evidex] Static files extraction complete. Extracted $extractedCount files.")
+        plugin.log.debug("Dashboard: $extractedCount archivo(s) estático(s) extraído(s)")
     }
 
     fun shutdown() {
         stop()
-        plugin.logger.info("Dashboard stopped")
+        plugin.log.info("Dashboard detenido")
     }
 }

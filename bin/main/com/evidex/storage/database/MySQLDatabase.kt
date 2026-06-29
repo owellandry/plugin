@@ -44,5 +44,8 @@ class MySQLDatabase(config: ConfigManager) : PooledDatabase(config) {
             )
         """)
         executeUpdate("CREATE INDEX idx_users_username ON users(username)")
+
+        DetectionSchema.applyMigrations(this)
+        DetectionSchema.createViolationsTableMySql(this)
     }
 }

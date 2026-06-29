@@ -2,8 +2,7 @@ package com.evidex.playback
 
 import com.evidex.EvidexPlugin
 import com.evidex.recording.NearbyEntityFrame
-import net.kyori.adventure.text.Component
-import net.kyori.adventure.text.format.NamedTextColor
+import com.evidex.util.BukkitExtensions
 import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.World
@@ -22,7 +21,8 @@ import org.bukkit.inventory.ItemStack
 class ReplayMobMarkerRenderer(
     private val plugin: EvidexPlugin,
     private val viewer: Player,
-    private var world: World
+    private val world: World,
+    private val entityIsolation: ReplayEntityIsolation? = null
 ) : Listener {
     private val slots = mutableListOf<MobSlot>()
 
@@ -33,12 +33,6 @@ class ReplayMobMarkerRenderer(
 
     init {
         plugin.server.pluginManager.registerEvents(this, plugin)
-    }
-
-    fun setWorld(newWorld: World) {
-        if (world.uid == newWorld.uid) return
-        clear()
-        world = newWorld
     }
 
     fun update(entities: List<NearbyEntityFrame>) {
@@ -87,14 +81,15 @@ class ReplayMobMarkerRenderer(
             marker.setBasePlate(false)
             marker.isSmall = entity.isBaby
             marker.isCustomNameVisible = true
-            marker.customName(displayName(entity))
+            BukkitExtensions.setCustomName(marker, displayName(entity))
             marker.isSilent = true
             marker.setArms(false)
             val head = mobHeadMaterial(entity.entityType)
             if (head != null) {
-                marker.equipment.helmet = ItemStack(head)
+                marker.equipment.setHelmet(ItemStack(head))
             }
         }
+        entityIsolation?.showReplayEntity(stand)
         hideFromOthers(stand)
         return stand
     }
@@ -103,10 +98,10 @@ class ReplayMobMarkerRenderer(
         val loc = entityLocation(entity)
         stand.teleport(loc)
         stand.isSmall = entity.isBaby
-        stand.customName(displayName(entity))
+        BukkitExtensions.setCustomName(stand, displayName(entity))
         val head = mobHeadMaterial(entity.entityType)
         if (head != null) {
-            stand.equipment.helmet = ItemStack(head)
+            stand.equipment.setHelmet(ItemStack(head))
         }
         hideFromOthers(stand)
     }
@@ -120,9 +115,9 @@ class ReplayMobMarkerRenderer(
         }
     }
 
-    private fun displayName(entity: NearbyEntityFrame): Component {
+    private fun displayName(entity: NearbyEntityFrame): String {
         val label = entity.name ?: entity.entityType
-        return Component.text("[$label]", NamedTextColor.YELLOW)
+        return "§e[$label]"
     }
 
     private fun entityLocation(entity: NearbyEntityFrame): Location {

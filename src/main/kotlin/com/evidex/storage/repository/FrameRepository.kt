@@ -91,6 +91,7 @@ class FrameRepository(private val framesDir: File) {
         raf.writeByte(frame.food.coerceIn(0, 20))
         raf.writeByte(frame.hotbarSlot.coerceIn(0, 8))
         writeNearbyEntities(raf, frame.nearbyEntities, maxEntitiesPerFrame)
+        writeEvent(raf, frame.eventType, frame.eventDetail)
     }
 
     private fun readFrame(raf: RandomAccessFile, version: Int): PlayerFrame {
@@ -120,6 +121,16 @@ class FrameRepository(private val framesDir: File) {
             nearbyEntities = emptyList()
         }
 
+        val eventType: String?
+        val eventDetail: String?
+        if (version >= 5) {
+            eventType = readOptionalString(raf)
+            eventDetail = readOptionalString(raf)
+        } else {
+            eventType = null
+            eventDetail = null
+        }
+
         return PlayerFrame(
             timestamp = timestamp,
             position = Vec3d(x, y, z),
@@ -134,7 +145,9 @@ class FrameRepository(private val framesDir: File) {
             health = health,
             food = food,
             hotbarSlot = hotbarSlot,
-            nearbyEntities = nearbyEntities
+            nearbyEntities = nearbyEntities,
+            eventType = eventType,
+            eventDetail = eventDetail
         )
     }
 
@@ -300,9 +313,34 @@ class FrameRepository(private val framesDir: File) {
         return ItemFrame(material, count)
     }
 
+    private fun writeEvent(raf: RandomAccessFile, eventType: String?, eventDetail: String?) {
+        writeOptionalString(raf, eventType)
+        writeOptionalString(raf, eventDetail)
+    }
+
+    private fun writeOptionalString(raf: RandomAccessFile, value: String?) {
+        if (value.isNullOrEmpty()) {
+            raf.writeByte(0)
+            return
+        }
+        raf.writeByte(1)
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        raf.writeShort(bytes.size.coerceAtMost(Short.MAX_VALUE.toInt()))
+        raf.write(bytes, 0, bytes.size.coerceAtMost(Short.MAX_VALUE.toInt()))
+    }
+
+    private fun readOptionalString(raf: RandomAccessFile): String? {
+        val present = raf.readByte().toInt()
+        if (present == 0) return null
+        val len = raf.readUnsignedShort()
+        val bytes = ByteArray(len)
+        raf.readFully(bytes)
+        return String(bytes, Charsets.UTF_8)
+    }
+
     companion object {
         private val MAGIC = byteArrayOf(0x45, 0x56, 0x46, 0x58) // "EVFX"
-        private const val VERSION = 4
+        private const val VERSION = 5
         private const val MAX_NEARBY_ENTITIES = 64
     }
 }

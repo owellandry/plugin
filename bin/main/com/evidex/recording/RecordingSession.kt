@@ -1,20 +1,23 @@
 package com.evidex.recording
 
 import com.evidex.EvidexPlugin
-import com.evidex.math.Angle
-import com.evidex.math.Vec3d
+import org.bukkit.Material
 import org.bukkit.entity.Player
-import org.bukkit.event.entity.EntityDamageEvent
 import org.bukkit.event.EventHandler
+import org.bukkit.event.EventPriority
 import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
+import org.bukkit.event.block.BlockBreakEvent
+import org.bukkit.event.block.BlockPlaceEvent
+import org.bukkit.event.entity.EntityDamageEvent
 import org.bukkit.event.player.*
 import org.bukkit.scheduler.BukkitTask
 
 class RecordingSession(
     private val plugin: EvidexPlugin,
     val player: Player,
-    private val onMaxDuration: () -> Unit
+    private val onMaxDuration: () -> Unit,
+    prebufferFrames: List<PlayerFrame> = emptyList()
 ) : Listener {
 
     val data = RecordingData(
@@ -28,7 +31,16 @@ class RecordingSession(
     private var maxDurationTask: BukkitTask? = null
 
     init {
+        if (prebufferFrames.isNotEmpty()) {
+            data.frames.addAll(prebufferFrames)
+            data.startTimestamp = System.currentTimeMillis() - prebufferFrames.last().timestamp
+            plugin.log.debug(
+                "Pre-buffer: ${prebufferFrames.size} frames (~${prebufferFrames.last().timestamp}ms) para ${player.name}"
+            )
+        }
+
         plugin.server.pluginManager.registerEvents(this, plugin)
+        RecordingEventCompat.registerPickupListener(plugin, this, player) { captureFrame() }
         captureFrame()
 
         val tickInterval = plugin.configManager.getRecordingTickInterval().coerceAtLeast(1).toLong()
@@ -50,56 +62,30 @@ class RecordingSession(
         HandlerList.unregisterAll(this)
     }
 
-    fun captureFrame(handSwing: Boolean = false) {
+    fun captureFrame(
+        handSwing: Boolean = false,
+        eventType: String? = null,
+        eventDetail: String? = null
+    ) {
         if (!isRecording || !player.isOnline) return
 
-        val loc = player.location
-        val equipment = EquipmentFrame(
-            mainHand = player.equipment.itemInMainHand?.let {
-                if (it.type.isAir) null else ItemFrame(it.type.name, it.amount)
-            },
-            offHand = player.equipment.itemInOffHand?.let {
-                if (it.type.isAir) null else ItemFrame(it.type.name, it.amount)
-            },
-            helmet = player.equipment.helmet?.let {
-                if (it.type.isAir) null else ItemFrame(it.type.name, it.amount)
-            },
-            chestplate = player.equipment.chestplate?.let {
-                if (it.type.isAir) null else ItemFrame(it.type.name, it.amount)
-            },
-            leggings = player.equipment.leggings?.let {
-                if (it.type.isAir) null else ItemFrame(it.type.name, it.amount)
-            },
-            boots = player.equipment.boots?.let {
-                if (it.type.isAir) null else ItemFrame(it.type.name, it.amount)
-            }
+        val relativeMs = System.currentTimeMillis() - data.startTimestamp
+        val frame = FrameCapture.capture(
+            plugin, player, relativeMs, handSwing, eventType, eventDetail
         )
-
-        val frame = PlayerFrame(
-            timestamp = System.currentTimeMillis() - data.startTimestamp,
-            position = Vec3d(loc.x, loc.y, loc.z),
-            yaw = Angle(loc.yaw),
-            pitch = Angle(loc.pitch),
-            onGround = player.isOnGround,
-            isSneaking = player.isSneaking,
-            isSprinting = player.isSprinting,
-            isFlying = player.isFlying,
-            handSwing = handSwing,
-            equipment = equipment,
-            health = player.health.toFloat(),
-            food = player.foodLevel,
-            hotbarSlot = player.inventory.heldItemSlot,
-            nearbyEntities = EntityCapture.capture(player, plugin.configManager)
-        )
-
         data.frames.add(frame)
+    }
+
+    fun captureTaggedEvent(eventType: String, eventDetail: String) {
+        captureFrame(eventType = eventType, eventDetail = eventDetail)
     }
 
     @EventHandler
     fun onMove(event: PlayerMoveEvent) {
         if (event.player != player || !isRecording) return
-        if (event.from.toVector().equals(event.to!!.toVector()) &&
-            event.from.yaw == event.to.yaw && event.from.pitch == event.to.pitch) return
+        val to = event.to
+        if (event.from.toVector().equals(to.toVector()) &&
+            event.from.yaw == to.yaw && event.from.pitch == to.pitch) return
         captureFrame()
     }
 
@@ -146,15 +132,35 @@ class RecordingSession(
     }
 
     @EventHandler
-    fun onPickupItem(event: PlayerAttemptPickupItemEvent) {
-        if (event.player != player || !isRecording) return
-        captureFrame()
-    }
-
-    @EventHandler
     fun onDamage(event: EntityDamageEvent) {
         if (event.entity != player || !isRecording) return
         captureFrame()
     }
 
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    fun onBlockPlace(event: BlockPlaceEvent) {
+        if (event.player != player || !isRecording) return
+        val block = event.blockPlaced
+        recordBlockChange(block.x, block.y, block.z, block.type)
+        captureTaggedEvent(
+            "place",
+            """{"block":"${block.type.name}","x":${block.x},"y":${block.y},"z":${block.z}}"""
+        )
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    fun onBlockBreak(event: BlockBreakEvent) {
+        if (event.player != player || !isRecording) return
+        val block = event.block
+        recordBlockChange(block.x, block.y, block.z, Material.AIR)
+        captureTaggedEvent(
+            "mining",
+            """{"block":"${block.type.name}","x":${block.x},"y":${block.y},"z":${block.z}}"""
+        )
+    }
+
+    private fun recordBlockChange(x: Int, y: Int, z: Int, material: Material) {
+        val relativeMs = System.currentTimeMillis() - data.startTimestamp
+        data.blockChanges.add(BlockChange(relativeMs, x, y, z, material.name))
+    }
 }

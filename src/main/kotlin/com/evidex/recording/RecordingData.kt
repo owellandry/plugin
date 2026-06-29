@@ -45,7 +45,9 @@ data class PlayerFrame(
     val health: Float = 20f,
     val food: Int = 20,
     val hotbarSlot: Int = 0,
-    val nearbyEntities: List<NearbyEntityFrame> = emptyList()
+    val nearbyEntities: List<NearbyEntityFrame> = emptyList(),
+    val eventType: String? = null,
+    val eventDetail: String? = null
 )
 
 data class EquipmentFrame(
@@ -64,9 +66,12 @@ data class ItemFrame(
 
 data class RecordingData(
     val playerName: String,
-    val startTimestamp: Long,
+    var startTimestamp: Long,
     val worldName: String? = null,
-    val frames: MutableList<PlayerFrame> = mutableListOf()
+    val recordingId: Long = 0,
+    val worldFilePath: String = "",
+    val frames: MutableList<PlayerFrame> = mutableListOf(),
+    val blockChanges: MutableList<BlockChange> = mutableListOf()
 ) {
     val duration: Long
         get() = if (frames.isEmpty()) 0 else frames.last().timestamp - frames.first().timestamp

@@ -24,7 +24,7 @@ class ReplayNpcRenderer(
     private val plugin: EvidexPlugin,
     private val platform: Platform<World, Player, ItemStack, Plugin>,
     private val viewer: Player,
-    private var world: World
+    private val world: World
 ) {
     private val slots = mutableListOf<NpcSlot>()
     private val pendingStates = ConcurrentHashMap<String, NearbyEntityFrame>()
@@ -34,12 +34,6 @@ class ReplayNpcRenderer(
         var npc: Npc<World, Player, ItemStack, Plugin>? = null,
         var spawning: Boolean = false
     )
-
-    fun setWorld(newWorld: World) {
-        if (world.uid == newWorld.uid) return
-        clear()
-        world = newWorld
-    }
 
     fun update(entities: List<NearbyEntityFrame>) {
         while (slots.size < entities.size) slots.add(NpcSlot())

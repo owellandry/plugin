@@ -2,6 +2,7 @@ package com.evidex.service
 
 import com.evidex.EvidexPlugin
 import com.evidex.config.ConfigManager
+import com.evidex.storage.repository.BlockChangeRepository
 import com.evidex.storage.repository.FrameRepository
 import com.evidex.storage.repository.RecordingRepository
 import com.evidex.storage.repository.WorldRepository
@@ -11,13 +12,14 @@ class CleanupService(
     private val recordingRepository: RecordingRepository,
     private val frameRepository: FrameRepository,
     private val worldRepository: WorldRepository,
+    private val blockChangeRepository: BlockChangeRepository,
     private val config: ConfigManager
 ) {
     private var task: org.bukkit.scheduler.BukkitTask? = null
 
     fun start() {
         if (!config.isCleanupEnabled()) {
-            plugin.logger.info("Cleanup service disabled")
+            plugin.log.debug("Limpieza automática desactivada")
             return
         }
 
@@ -26,7 +28,9 @@ class CleanupService(
             runCleanup()
         }, interval, interval)
 
-        plugin.logger.info("Cleanup service started (retention: ${config.getCleanupRetentionDays()}d, interval: ${config.getCleanupInterval()}s)")
+        plugin.log.debug(
+            "Limpieza automática activa (retención: ${config.getCleanupRetentionDays()} días)"
+        )
     }
 
     fun stop() {
@@ -43,16 +47,17 @@ class CleanupService(
                 try {
                     frameRepository.deleteFile(metadata.filePath)
                     worldRepository.deleteFile(metadata.worldFilePath)
+                    blockChangeRepository.deleteFile(metadata.id)
                 } catch (e: Exception) {
-                    plugin.logger.warning("Failed to delete recording files: ${metadata.filePath} - ${e.message}")
+                    plugin.log.warn("No se pudieron borrar archivos de ${metadata.id}: ${e.message}")
                 }
             }
 
             if (expired.isNotEmpty()) {
-                plugin.logger.info("Cleanup removed ${expired.size} expired recordings")
+                plugin.log.info("Limpieza: ${expired.size} grabación(es) expirada(s) eliminada(s)")
             }
         } catch (e: Exception) {
-            plugin.logger.warning("Cleanup error: ${e.message}")
+            plugin.log.warn("Error en limpieza automática", e)
         }
     }
 }

@@ -9,7 +9,8 @@ import {
     AiOutlineClose,
     AiOutlinePlayCircle,
     AiOutlinePauseCircle,
-    AiOutlineDelete
+    AiOutlineDelete,
+    AiOutlineSafety
 } from 'https://cdn.jsdelivr.net/npm/react-icons@5.6.0/ai/+esm';
 
 const ICONS = {
@@ -21,7 +22,8 @@ const ICONS = {
     close: AiOutlineClose,
     play: AiOutlinePlayCircle,
     pause: AiOutlinePauseCircle,
-    delete: AiOutlineDelete
+    delete: AiOutlineDelete,
+    shield: AiOutlineSafety
 };
 
 const roots = new WeakMap();

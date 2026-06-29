@@ -8,8 +8,10 @@ class RecordingRepository(private val db: Database) {
     fun create(metadata: RecordingMetadata): Long {
         val sql = """
             INSERT INTO recording_metadata 
-                (player_name, start_timestamp, end_timestamp, world, x, y, z, frame_count, file_path, world_file_path, video_file_path, video_status, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (player_name, start_timestamp, end_timestamp, world, x, y, z, frame_count, file_path,
+                 world_file_path, video_file_path, video_status, status, source, trigger_check,
+                 peak_vl, violation_count, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         db.executeUpdate(sql, listOf(
             metadata.playerName,
@@ -25,6 +27,10 @@ class RecordingRepository(private val db: Database) {
             metadata.videoFilePath,
             metadata.videoStatus,
             metadata.status,
+            metadata.source,
+            metadata.triggerCheck,
+            metadata.peakVl,
+            metadata.violationCount,
             metadata.createdAt
         ))
 
@@ -39,7 +45,8 @@ class RecordingRepository(private val db: Database) {
         val sql = """
             UPDATE recording_metadata SET
                 end_timestamp = ?, frame_count = ?, file_path = ?, world_file_path = ?,
-                video_file_path = ?, video_status = ?, status = ?
+                video_file_path = ?, video_status = ?, status = ?, source = ?,
+                trigger_check = ?, peak_vl = ?, violation_count = ?
             WHERE id = ?
         """
         db.executeUpdate(sql, listOf(
@@ -50,6 +57,10 @@ class RecordingRepository(private val db: Database) {
             metadata.videoFilePath,
             metadata.videoStatus,
             metadata.status,
+            metadata.source,
+            metadata.triggerCheck,
+            metadata.peakVl,
+            metadata.violationCount,
             metadata.id
         ))
     }
@@ -127,6 +138,10 @@ class RecordingRepository(private val db: Database) {
             videoFilePath = row["video_file_path"] as? String ?: "",
             videoStatus = row["video_status"] as? String ?: "pending",
             status = row["status"] as? String ?: "recording",
+            source = row["source"] as? String ?: "MANUAL",
+            triggerCheck = row["trigger_check"] as? String,
+            peakVl = (row["peak_vl"] as? Number)?.toInt() ?: 0,
+            violationCount = (row["violation_count"] as? Number)?.toInt() ?: 0,
             createdAt = (row["created_at"] as? Number)?.toLong() ?: 0
         )
     }

@@ -1,5 +1,6 @@
 package com.evidex
 
+import com.evidex.util.EvidexMessages
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
@@ -9,8 +10,13 @@ import org.bukkit.entity.Player
 class EvidexCommand(private val plugin: EvidexPlugin) : CommandExecutor, TabCompleter {
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
+        if (!sender.hasPermission("evidex.admin")) {
+            EvidexMessages.error(sender, "Sin permiso (evidex.admin)")
+            return true
+        }
+
         if (args.isEmpty()) {
-            sender.sendMessage("§6[Evidex] §eUsage: /evidex <record|replay|stop|list> [player]")
+            EvidexMessages.warn(sender, "Uso: /evidex <record|replay|stop|list|alerts|violations|check> [jugador]")
             return true
         }
 
@@ -19,83 +25,184 @@ class EvidexCommand(private val plugin: EvidexPlugin) : CommandExecutor, TabComp
             "replay" -> handleReplay(sender, args)
             "stop" -> handleStop(sender, args)
             "list" -> handleList(sender)
-            else -> sender.sendMessage("§6[Evidex] §cUnknown command. Use: record, replay, stop, list")
+            "alerts" -> handleAlerts(sender, args)
+            "violations" -> handleViolations(sender, args)
+            "check" -> handleCheck(sender, args)
+            else -> EvidexMessages.error(sender, "Comando desconocido. Usa: record, replay, stop, list, alerts, violations, check")
         }
         return true
     }
 
     private fun handleRecord(sender: CommandSender, args: Array<out String>) {
         if (args.size < 2) {
-            sender.sendMessage("§6[Evidex] §eUsage: /evidex record <player>")
+            EvidexMessages.warn(sender, "Uso: /evidex record <jugador>")
             return
         }
         val target = plugin.server.getPlayer(args[1])
         if (target == null) {
-            sender.sendMessage("§6[Evidex] §cPlayer '${args[1]}' not found")
+            EvidexMessages.error(sender, "Jugador '${args[1]}' no encontrado")
             return
         }
         if (plugin.recordingManager.isRecording(target)) {
-            sender.sendMessage("§6[Evidex] §cAlready recording ${target.name}")
+            EvidexMessages.error(sender, "Ya se está grabando a ${target.name}")
             return
         }
         plugin.recordingManager.startRecording(target)
-        sender.sendMessage("§6[Evidex] §aStarted recording ${target.name}")
+        EvidexMessages.success(sender, "Grabación iniciada: ${target.name}")
     }
 
     private fun handleReplay(sender: CommandSender, args: Array<out String>) {
         if (args.size < 2) {
-            sender.sendMessage("§6[Evidex] §eUsage: /evidex replay <player>")
-            return
-        }
-        val targetName = args[1]
-        val recording = plugin.recordingManager.getRecording(targetName)
-        if (recording == null) {
-            sender.sendMessage("§6[Evidex] §cNo recording found for '$targetName'")
+            EvidexMessages.warn(sender, "Uso: /evidex replay <jugador|pause|resume|speed|skip>")
             return
         }
         val viewer = sender as? Player
         if (viewer == null) {
-            sender.sendMessage("§6[Evidex] §cMust be a player to view replays")
+            EvidexMessages.error(sender, "Debes ser un jugador en el juego para usar replays")
             return
         }
-        plugin.replayManager.startReplay(viewer, recording)
-        sender.sendMessage("§6[Evidex] §aPlaying replay of $targetName")
+
+        when (args[1].lowercase()) {
+            "pause" -> {
+                if (plugin.replayManager.getSession(viewer) == null) {
+                    EvidexMessages.warn(viewer, "No tienes un replay activo")
+                    return
+                }
+                plugin.replayManager.pause(viewer)
+            }
+            "resume" -> {
+                if (plugin.replayManager.getSession(viewer) == null) {
+                    EvidexMessages.warn(viewer, "No tienes un replay activo")
+                    return
+                }
+                plugin.replayManager.resume(viewer)
+            }
+            "speed" -> {
+                if (args.size < 3) {
+                    EvidexMessages.warn(viewer, "Uso: /evidex replay speed <0.5|1|2>")
+                    return
+                }
+                val speed = args[2].toDoubleOrNull()
+                if (speed == null) {
+                    EvidexMessages.error(viewer, "Velocidad inválida")
+                    return
+                }
+                if (plugin.replayManager.getSession(viewer) == null) {
+                    EvidexMessages.warn(viewer, "No tienes un replay activo")
+                    return
+                }
+                plugin.replayManager.setSpeed(viewer, speed)
+            }
+            "skip" -> {
+                if (plugin.replayManager.getSession(viewer) == null) {
+                    EvidexMessages.warn(viewer, "No tienes un replay activo")
+                    return
+                }
+                plugin.replayManager.skipToNextFlag(viewer)
+            }
+            else -> {
+                val recording = plugin.recordingManager.getRecording(args[1])
+                    ?: plugin.recordingManager.getRecordingById(args[1].toLongOrNull() ?: -1)
+                if (recording == null) {
+                    EvidexMessages.error(sender, "No hay grabación para '${args[1]}'")
+                    return
+                }
+                plugin.replayManager.startReplay(viewer, recording)
+            }
+        }
     }
 
     private fun handleStop(sender: CommandSender, args: Array<out String>) {
         if (args.size < 2) {
-            sender.sendMessage("§6[Evidex] §eUsage: /evidex stop <record|replay> [player]")
+            EvidexMessages.warn(sender, "Uso: /evidex stop <record|replay> [jugador]")
             return
         }
         when (args[1].lowercase()) {
             "record" -> {
                 if (args.size < 3) {
                     plugin.recordingManager.stopAll()
-                    sender.sendMessage("§6[Evidex] §aStopped all recordings")
+                    EvidexMessages.success(sender, "Todas las grabaciones detenidas")
                 } else {
                     val target = plugin.server.getPlayer(args[2])
                     if (target != null && plugin.recordingManager.isRecording(target)) {
                         plugin.recordingManager.stopRecording(target)
-                        sender.sendMessage("§6[Evidex] §aStopped recording ${target.name}")
+                        EvidexMessages.success(sender, "Grabación detenida: ${target.name}")
                     }
                 }
             }
             "replay" -> {
-                val viewer = sender as? Player
-                if (viewer != null) {
-                    plugin.replayManager.stopReplay(viewer)
-                    sender.sendMessage("§6[Evidex] §aStopped replay")
-                }
+                val viewer = sender as? Player ?: return
+                plugin.replayManager.stopReplay(viewer)
+                EvidexMessages.success(sender, "Replay detenido")
             }
         }
+    }
+
+    private fun handleAlerts(sender: CommandSender, args: Array<out String>) {
+        if (!plugin.hasViolationRepository()) {
+            EvidexMessages.error(sender, "Detección no disponible")
+            return
+        }
+        val limit = args.getOrNull(1)?.toIntOrNull()?.coerceIn(1, 50) ?: 10
+        val alerts = plugin.violationRepository.findRecent(limit)
+        if (alerts.isEmpty()) {
+            EvidexMessages.info(sender, "Sin alertas recientes")
+            return
+        }
+        EvidexMessages.info(sender, "Últimas $limit alertas:")
+        for (v in alerts) {
+            sender.sendMessage("§7#${v.id} §e${v.playerName} §c${v.checkName} §7VL ${v.vlTotal} §8(${v.severity})")
+        }
+    }
+
+    private fun handleViolations(sender: CommandSender, args: Array<out String>) {
+        if (args.size < 2) {
+            EvidexMessages.warn(sender, "Uso: /evidex violations <jugador>")
+            return
+        }
+        if (!plugin.hasViolationRepository()) {
+            EvidexMessages.error(sender, "Detección no disponible")
+            return
+        }
+        val list = plugin.violationRepository.findByPlayer(args[1])
+        if (list.isEmpty()) {
+            EvidexMessages.info(sender, "Sin violaciones para ${args[1]}")
+            return
+        }
+        for (v in list.take(15)) {
+            sender.sendMessage("§7${v.checkName} §cVL ${v.vlTotal} §8— ${v.infoJson}")
+        }
+    }
+
+    private fun handleCheck(sender: CommandSender, args: Array<out String>) {
+        if (args.size < 2) {
+            EvidexMessages.warn(sender, "Uso: /evidex check <jugador>")
+            return
+        }
+        if (!plugin.hasDetection()) {
+            EvidexMessages.error(sender, "Detección no disponible")
+            return
+        }
+        val target = plugin.server.getPlayer(args[1])
+        if (target == null) {
+            EvidexMessages.error(sender, "Jugador no encontrado")
+            return
+        }
+        val profile = plugin.detectionManager.getProfile(target.uniqueId)
+        if (profile == null || profile.vlByCheck.isEmpty()) {
+            EvidexMessages.info(sender, "${args[1]}: sin VL activo")
+            return
+        }
+        val summary = profile.vlByCheck.entries.joinToString(", ") { "${it.key}=${it.value}" }
+        EvidexMessages.info(sender, "${target.name}: $summary (total ${profile.totalVl()})")
     }
 
     private fun handleList(sender: CommandSender) {
         val recordings = plugin.recordingManager.getRecordingNames()
         if (recordings.isEmpty()) {
-            sender.sendMessage("§6[Evidex] §7No recordings available")
+            EvidexMessages.info(sender, "No hay grabaciones disponibles")
         } else {
-            sender.sendMessage("§6[Evidex] §eRecordings: §f${recordings.joinToString(", ")}")
+            EvidexMessages.info(sender, "Grabaciones: ${recordings.joinToString(", ")}")
         }
     }
 
@@ -104,25 +211,32 @@ class EvidexCommand(private val plugin: EvidexPlugin) : CommandExecutor, TabComp
         command: Command,
         label: String,
         args: Array<out String>
-    ): List<String> {
-        return try {
-            when (args.size) {
-                1 -> listOf("record", "replay", "stop", "list").filter { it.startsWith(args[0].lowercase()) }
-                2 -> when (args[0].lowercase()) {
-                    "record", "replay" -> plugin.server.onlinePlayers.map { it.name }
-                        .filter { it.startsWith(args[1], ignoreCase = true) }
-                    "stop" -> listOf("record", "replay").filter { it.startsWith(args[1].lowercase()) }
-                    else -> emptyList()
+    ): List<String> = try {
+        when (args.size) {
+            1 -> listOf("record", "replay", "stop", "list", "alerts", "violations", "check")
+                .filter { it.startsWith(args[0].lowercase()) }
+            2 -> when (args[0].lowercase()) {
+                "replay" -> {
+                    val controls = listOf("pause", "resume", "speed", "skip")
+                    val players = plugin.server.onlinePlayers.map { it.name }
+                    (controls + players).filter { it.startsWith(args[1], ignoreCase = true) }
                 }
-                3 -> if (args[0].equals("stop", ignoreCase = true) && args[1].equals("record", ignoreCase = true)) {
-                    plugin.server.onlinePlayers.map { it.name }
-                        .filter { it.startsWith(args[2], ignoreCase = true) }
-                } else emptyList()
+                "record", "violations", "check" -> plugin.server.onlinePlayers.map { it.name }
+                    .filter { it.startsWith(args[1], ignoreCase = true) }
+                "stop" -> listOf("record", "replay").filter { it.startsWith(args[1].lowercase()) }
                 else -> emptyList()
             }
-        } catch (e: Exception) {
-            // Defensive: during /reload the server state can be inconsistent
-            emptyList()
+            3 -> when {
+                args[0].equals("replay", true) && args[1].equals("speed", true) ->
+                    listOf("0.5", "1", "2").filter { it.startsWith(args[2]) }
+                args[0].equals("stop", true) && args[1].equals("record", true) ->
+                    plugin.server.onlinePlayers.map { it.name }
+                        .filter { it.startsWith(args[2], ignoreCase = true) }
+                else -> emptyList()
+            }
+            else -> emptyList()
         }
+    } catch (_: Exception) {
+        emptyList()
     }
 }

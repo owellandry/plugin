@@ -15,12 +15,20 @@
                     <div class="logo-block small"></div>
                     <span>EVIDEX</span>
                 </div>
-                <span class="nav-tag">DASHBOARD DE EVIDENCIAS</span>
+                <span class="nav-tag">DETECCIÓN + EVIDENCIAS</span>
             </div>
             <div class="nav-right">
                 <span id="status-badge" class="badge badge-idle">CONECTANDO...</span>
             </div>
         </nav>
+
+        <div class="tab-bar">
+            <button class="tab-btn active" data-tab="monitor" onclick="switchTab('monitor')">MONITOR</button>
+            <button class="tab-btn" data-tab="alerts" onclick="switchTab('alerts')">
+                ALERTAS <span id="alert-badge" class="tab-alert-badge" style="display:none">0</span>
+            </button>
+            <button class="tab-btn" data-tab="evidence" onclick="switchTab('evidence')">EVIDENCIAS</button>
+        </div>
 
         <div class="container">
             <div class="stats-row">
@@ -30,51 +38,107 @@
                 </div>
                 <div class="stat-card">
                     <div class="stat-value" id="stat-active">0</div>
-                    <div class="stat-label">GRABANDO AHORA</div>
+                    <div class="stat-label">GRABANDO</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value" id="stat-players">0</div>
-                    <div class="stat-label">JUGADORES ONLINE</div>
+                    <div class="stat-value" id="stat-alerts">0</div>
+                    <div class="stat-label">ALERTAS HOY</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-flagged">0</div>
+                    <div class="stat-label">FLAGGEADOS</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-auto">0</div>
+                    <div class="stat-label">AUTO-GRAB.</div>
                 </div>
             </div>
 
-            <div class="grid">
-                <section class="panel mc-panel">
-                    <div class="panel-header">
-                        <div class="panel-title">
-                            <span class="icon-slot icon-title" data-icon="team" data-size="18"></span>
-                            JUGADORES ONLINE
+            <div id="tab-monitor" class="tab-panel active">
+                <div class="grid">
+                    <section class="panel mc-panel">
+                        <div class="panel-header">
+                            <div class="panel-title">
+                                <span class="icon-slot icon-title" data-icon="team" data-size="18"></span>
+                                JUGADORES ONLINE
+                            </div>
+                            <button class="panel-action" onclick="refreshAll()" aria-label="Actualizar">
+                                <span class="icon-slot" data-icon="reload" data-size="18"></span>
+                            </button>
                         </div>
-                        <button class="panel-action" onclick="refreshAll()" aria-label="Actualizar">
-                            <span class="icon-slot" data-icon="reload" data-size="18"></span>
-                        </button>
-                    </div>
-                    <div id="players-list" class="list"></div>
-                </section>
+                        <div id="players-list" class="list"></div>
+                    </section>
+                    <section class="panel mc-panel">
+                        <div class="panel-header">
+                            <div class="panel-title">
+                                <span class="icon-slot icon-recording" data-icon="recording" data-size="18" data-color="#ff6b6b"></span>
+                                GRABANDO AHORA
+                            </div>
+                        </div>
+                        <div id="active-recordings" class="list"></div>
+                    </section>
+                </div>
+            </div>
 
-                <section class="panel mc-panel">
+            <div id="tab-alerts" class="tab-panel">
+                <section class="panel mc-panel large">
                     <div class="panel-header">
-                        <div class="panel-title">
-                            <span class="icon-slot icon-recording" data-icon="recording" data-size="18" data-color="#ff6b6b"></span>
-                            GRABANDO
+                        <div>
+                            <div class="panel-title">
+                                <span class="icon-slot icon-title" data-icon="shield" data-size="18"></span>
+                                ALERTAS EN VIVO
+                            </div>
+                            <div class="panel-sub">Flags de detección — actualización cada 3s</div>
                         </div>
                     </div>
-                    <div id="active-recordings" class="list"></div>
+                    <div class="filter-bar">
+                        <input type="text" id="alert-filter-player" class="filter-input" placeholder="Filtrar jugador…" oninput="renderAlerts()">
+                        <select id="alert-filter-category" class="filter-select" onchange="renderAlerts()">
+                            <option value="">Todas las categorías</option>
+                            <option value="MOVEMENT">MOVEMENT</option>
+                            <option value="COMBAT">COMBAT</option>
+                            <option value="PLAYER">PLAYER</option>
+                        </select>
+                        <select id="alert-filter-severity" class="filter-select" onchange="renderAlerts()">
+                            <option value="">Toda severidad</option>
+                            <option value="LOW">LOW</option>
+                            <option value="MEDIUM">MEDIUM</option>
+                            <option value="HIGH">HIGH</option>
+                            <option value="CRITICAL">CRITICAL</option>
+                        </select>
+                    </div>
+                    <div id="alerts-list" class="list alerts-list"></div>
                 </section>
             </div>
 
-            <section class="panel mc-panel large">
-                <div class="panel-header">
-                    <div class="panel-title">
-                        <span class="icon-slot icon-title" data-icon="folder" data-size="18"></span>
-                        EVIDENCIAS GUARDADAS
+            <div id="tab-evidence" class="tab-panel">
+                <section class="panel mc-panel large">
+                    <div class="panel-header">
+                        <div>
+                            <div class="panel-title">
+                                <span class="icon-slot icon-title" data-icon="folder" data-size="18"></span>
+                                EVIDENCIAS GUARDADAS
+                            </div>
+                            <div class="panel-sub">Reproduce en el juego — admins online</div>
+                        </div>
                     </div>
-                    <div class="panel-sub">Reproduce en el juego — solo admins online</div>
-                </div>
-                <div id="saved-recordings" class="evidence-list"></div>
-            </section>
+                    <div class="filter-bar">
+                        <input type="text" id="evidence-filter-player" class="filter-input" placeholder="Buscar jugador…" oninput="renderSavedRecordings()">
+                        <label class="filter-check">
+                            <input type="checkbox" id="evidence-filter-auto" onchange="renderSavedRecordings()">
+                            Solo auto-grabaciones
+                        </label>
+                        <select id="evidence-sort" class="filter-select" onchange="renderSavedRecordings()">
+                            <option value="recent">Más reciente</option>
+                            <option value="flags">Más flags</option>
+                            <option value="vl">Mayor VL</option>
+                        </select>
+                    </div>
+                    <div id="saved-recordings" class="evidence-list"></div>
+                </section>
+            </div>
 
-            <footer class="dash-footer">Evidex v1.0.0 • Dashboard • Puerto 9090</footer>
+            <footer class="dash-footer">Evidex v1.0.0 • Detección + Dashboard • Puerto 9090</footer>
         </div>
     </div>
 
@@ -91,12 +155,26 @@
             </div>
             <div class="replay-body">
                 <p id="replay-info" class="replay-info"></p>
+                <p id="replay-trigger" class="replay-trigger"></p>
+                <div id="replay-violations" class="replay-violations"></div>
+                <div id="replay-timeline" class="evidence-timeline"></div>
                 <label class="replay-label" for="admin-select">Admin que verá el replay (debe estar online)</label>
-                <select id="admin-select" class="replay-select"></select>
-                <p id="replay-hint" class="replay-hint">El admin entrará al juego y verá la grabación como si fuera el jugador.</p>
+                <select id="admin-select" class="replay-select" onchange="onAdminSelectChange()"></select>
+                <p id="replay-hint" class="replay-hint">Solo el admin seleccionado verá la evidencia en el juego.</p>
+                <div id="replay-controls" class="replay-controls" style="display:none">
+                    <div id="replay-status" class="replay-status"></div>
+                    <div class="replay-control-row">
+                        <button class="mc-btn mc-btn-ghost small" id="replay-pause-btn" onclick="pauseReplay()">PAUSA</button>
+                        <button class="mc-btn mc-btn-ghost small" id="replay-resume-btn" onclick="resumeReplay()">REANUDAR</button>
+                        <button class="mc-btn mc-btn-ghost small" onclick="setReplaySpeed(0.5)">0.5x</button>
+                        <button class="mc-btn mc-btn-ghost small" onclick="setReplaySpeed(1)">1x</button>
+                        <button class="mc-btn mc-btn-ghost small" onclick="setReplaySpeed(2)">2x</button>
+                        <button class="mc-btn mc-btn-primary small" onclick="skipReplayFlag()">SALTAR FLAG</button>
+                    </div>
+                </div>
             </div>
             <div class="replay-actions">
-                <button class="mc-btn mc-btn-ghost" onclick="closeReplayModal()">CANCELAR</button>
+                <button class="mc-btn mc-btn-ghost" onclick="closeReplayModal()">CERRAR</button>
                 <button class="mc-btn mc-btn-danger" id="stop-replay-btn" onclick="stopReplay()" style="display:none">DETENER</button>
                 <button class="mc-btn mc-btn-primary" id="play-replay-btn" onclick="startReplay()">REPRODUCIR</button>
             </div>

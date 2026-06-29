@@ -64,11 +64,11 @@ class InitialWorldSnapshotTask(
                 )
                 val worldPath = worldRepository.writeSnapshot(recordingId, snapshot)
                 recordingRepository.updateWorldFilePath(recordingId, worldPath)
-                plugin.logger.info(
-                    "World snapshot for $playerName: ${snapshot.blocks.size} blocks (radius $radius, sliced capture)"
+                plugin.log.info(
+                    "Snapshot inicial: $playerName — ${snapshot.blocks.size} bloques (radio $radius)"
                 )
             } catch (e: Exception) {
-                plugin.logger.warning("Failed to save initial world snapshot for $playerName: ${e.message}")
+                plugin.log.warn("Snapshot inicial fallido ($playerName): ${e.message}")
             }
         })
     }

@@ -75,6 +75,14 @@ replay:
 
   # El replay es SIEMPRE en primera persona: vives lo que vio el sospechoso.
 
+  # Modo evidencia: ocultar jugadores/mobs/items del servidor en vivo (solo el admin viewer)
+  isolate-live-entities: true
+  # Aplicar snapshot de bloques grabado (.evw) y restaurar al salir
+  apply-world-snapshot: true
+  world-overlay-blocks-per-tick: 3000
+  # Bloquear interacción del admin durante el replay
+  lock-input: true
+
   # NPCs de otros jugadores capturados (requiere PacketEvents + grabación nueva)
   show-player-npcs: true
   # Marcadores de mobs con nombre (solo visibles para el admin en replay)
@@ -86,6 +94,167 @@ cleanup:
   enabled: true
   retention-days: 30
   interval: 3600
+
+detection:
+  enabled: true
+  exempt-permission: evidex.bypass
+  exempt-creative: true
+  exempt-spectator: true
+  # Mundos donde NO corren checks (ej: lobby, minijuegos)
+  disabled-worlds: []
+  # Si no está vacío, solo estos mundos tienen detección (ej: [world, world_nether])
+  enabled-worlds-only: []
+  # Segundos sin flags tras entrar (evita falsos positivos al cargar chunks)
+  join-grace-seconds: 5
+  # 1.0 = normal | 1.5 = más estricto | 0.75 = más permisivo
+  sensitivity-multiplier: 1.0
+  # Milisegundos entre alertas del mismo check por jugador
+  alert-cooldown-ms: 1500
+  vl-decay-factor: 0.85
+  lag-compensation:
+    enabled: true
+    reach-per-ms: 0.003
+  auto-record-on-flag: true
+  auto-record-on-first-flag: true
+  auto-record-min-vl: 5
+  alert-staff: true
+  decay-interval-ticks: 100
+  # Guarda los últimos N segundos ANTES del flag y los antepone a la auto-grabación
+  pre-buffer:
+    enabled: true
+    seconds: 10
+    tick-interval: 2
+    auto-only: true
+  checks:
+    # --- MOVIMIENTO ---
+    flight:
+      enabled: true
+      max-vl: 20
+      flag-vl: 5
+      vl-add: 2
+      max-air-ticks: 40
+    speed:
+      enabled: true
+      max-vl: 20
+      flag-vl: 5
+      vl-add: 1
+      max-speed: 0.85
+    nofall:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 3
+      min-fall-distance: 3.5
+    jesus:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 3
+    step:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 2
+      max-step-height: 0.6
+    spider:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 3
+    timer:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 2
+      max-moves-per-second: 22
+    blink:
+      enabled: true
+      max-vl: 20
+      flag-vl: 4
+      vl-add: 4
+      max-blink-distance: 8.0
+    # --- COMBATE ---
+    reach:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 3
+      max-distance: 3.5
+    killaura:
+      enabled: true
+      max-vl: 20
+      flag-vl: 4
+      vl-add: 3
+      max-angle: 75
+      max-targets: 2
+    autoclick:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 2
+      max-cps: 18
+    aimassist:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 2
+      snap-degrees: 35
+    wallhit:
+      enabled: true
+      max-vl: 20
+      flag-vl: 4
+      vl-add: 4
+      min-wall-blocks: 1
+    badrotation:
+      enabled: true
+      max-vl: 10
+      flag-vl: 3
+      vl-add: 2
+      max-pitch: 91
+    velocity:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 3
+      min-kb-ratio: 0.25
+    # --- JUGADOR / MUNDO ---
+    xray:
+      enabled: true
+      max-vl: 20
+      flag-vl: 4
+      vl-add: 4
+      min-hidden-ores: 1
+    fastbreak:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 2
+      min-break-ms: 80
+    scaffold:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 3
+      max-places-per-second: 12
+    fasteat:
+      enabled: true
+      max-vl: 10
+      flag-vl: 3
+      vl-add: 2
+      min-eat-ms: 900
+    cheststealer:
+      enabled: true
+      max-vl: 15
+      flag-vl: 4
+      vl-add: 3
+      max-clicks-per-window: 8
+      window-ms: 400
+    fastinventory:
+      enabled: true
+      max-vl: 10
+      flag-vl: 3
+      vl-add: 2
+      max-clicks-per-second: 25
 
 dashboard:
   enabled: true

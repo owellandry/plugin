@@ -54,7 +54,7 @@ class AuthManager(
             // Also try a safe index (ignore errors on other DBs)
             try { database.executeUpdate("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)") } catch (_: Exception) {}
         } catch (e: Exception) {
-            plugin.logger.warning("Could not ensure users table: ${e.message}")
+            plugin.log.warn("No se pudo crear tabla de usuarios: ${e.message}")
         }
     }
 
@@ -64,10 +64,10 @@ class AuthManager(
             if (existing == null) {
                 val defaultHash = hashPassword("admin")
                 createUser("admin", defaultHash, mustChange = true)
-                plugin.logger.info("Created default dashboard user: admin (password: admin) - MUST CHANGE ON FIRST LOGIN")
+                plugin.log.warn("Usuario dashboard creado: admin — cambia la contraseña en el primer inicio de sesión")
             }
         } catch (e: Exception) {
-            plugin.logger.warning("Could not ensure default admin user: ${e.message}")
+            plugin.log.warn("No se pudo crear usuario admin: ${e.message}")
         }
     }
 
@@ -94,7 +94,7 @@ class AuthManager(
         )
         val row = results.firstOrNull() ?: return null
         // Normalize keys to lowercase for compatibility across DBs / JDBC versions
-        return row.mapKeys { it.key.toString().lowercase() }
+        return row.mapKeys { (key, _) -> key.lowercase() }
     }
 
     fun updatePassword(username: String, newHash: String, mustChange: Boolean = false) {
@@ -165,7 +165,7 @@ class AuthManager(
                 } else {
                     updatePassword("admin", defaultHash, mustChange = true)
                 }
-                plugin.logger.info("[Dashboard] Admin recovery triggered - reset to default 'admin' with must change")
+                plugin.log.warn("Dashboard: cuenta admin restablecida — cambia la contraseña")
 
                 val token = generateToken()
                 val session = Session("admin", System.currentTimeMillis() + SESSION_DURATION_MS)

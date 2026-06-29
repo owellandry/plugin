@@ -5,7 +5,9 @@ import com.evidex.recording.EquipmentFrame
 import com.evidex.recording.ItemFrame
 import com.evidex.recording.PlayerFrame
 import com.evidex.recording.RecordingData
-import net.kyori.adventure.text.Component
+import com.evidex.storage.repository.WorldRepository
+import com.evidex.util.BukkitExtensions
+import com.evidex.util.EvidexMessages
 import org.bukkit.Bukkit
 import org.bukkit.GameMode
 import org.bukkit.Location
@@ -16,12 +18,18 @@ import org.bukkit.scheduler.BukkitTask
 
 class ReplaySession(
     private val plugin: EvidexPlugin,
+    private val worldRepository: WorldRepository,
     val viewer: Player,
     val recording: RecordingData
 ) {
     private var task: BukkitTask? = null
     private var currentFrameIndex = 0
     private var isPlaying = false
+    private var paused = false
+    private var speedMultiplier = 1.0
+    private var playheadMs = 0L
+    private var lastTickWallMs = 0L
+
     private var originalGameMode: GameMode = viewer.gameMode
     private var originalAllowFlight: Boolean = viewer.allowFlight
     private var originalFlying: Boolean = viewer.isFlying
@@ -31,17 +39,29 @@ class ReplaySession(
     private var originalHeldSlot: Int = viewer.inventory.heldItemSlot
     private val originalInventory: Array<ItemStack?> = viewer.inventory.contents.clone()
     private val originalArmor: Array<ItemStack?> = viewer.inventory.armorContents.clone()
+
     private var entityRenderer: ReplayEntityRenderer? = null
+    private var entityIsolation: ReplayEntityIsolation? = null
+    private var inputGuard: ReplayInputGuard? = null
+    private var worldOverlay: ReplayWorldOverlay? = null
+    private var blockTimeline: ReplayBlockTimeline? = null
     private var replayWorld = viewer.world
+    private var preparingWorld = false
+
+    val isPaused: Boolean get() = paused
+    val playbackSpeed: Double get() = speedMultiplier
+    val frameIndex: Int get() = currentFrameIndex.coerceAtMost(recording.frames.lastIndex.coerceAtLeast(0))
+    val frameCount: Int get() = recording.frames.size
+    val isActive: Boolean get() = isPlaying || preparingWorld
 
     fun start() {
         if (recording.frames.isEmpty()) {
-            viewer.sendMessage("§6[Evidex] §cLa grabación no tiene fotogramas")
+            EvidexMessages.error(viewer, "La grabación no tiene fotogramas")
             return
         }
 
         if (!PacketEventsService.isReady()) {
-            viewer.sendMessage("§6[Evidex] §cPacketEvents no está listo — reinicia el servidor (no uses /reload)")
+            EvidexMessages.error(viewer, "PacketEvents no está listo — reinicia el servidor (no uses /reload)")
             return
         }
 
@@ -50,6 +70,160 @@ class ReplaySession(
             replayWorld = viewer.world
         }
 
+        saveViewerState()
+        viewer.gameMode = GameMode.ADVENTURE
+        viewer.allowFlight = true
+
+        if (plugin.configManager.isReplayIsolateLiveEntities()) {
+            entityIsolation = ReplayEntityIsolation(plugin, viewer).also { it.activate() }
+        }
+        if (plugin.configManager.isReplayLockInput()) {
+            inputGuard = ReplayInputGuard(plugin, viewer).also { it.activate() }
+        }
+
+        val isolation = entityIsolation
+        entityRenderer = ReplayEntityRenderer(
+            plugin,
+            viewer,
+            replayWorld,
+            plugin.configManager,
+            isolation
+        )
+
+        preparingWorld = true
+        EvidexMessages.info(viewer, "§6Modo evidencia §8— cargando escena…")
+
+        beginWorldOverlay {
+            prepareBlockTimeline()
+            preparingWorld = false
+            beginPlayback()
+        }
+    }
+
+    private fun beginWorldOverlay(onReady: () -> Unit) {
+        val snapshot = if (plugin.configManager.isReplayApplyWorldSnapshot() && recording.worldFilePath.isNotBlank()) {
+            worldRepository.readSnapshot(recording.worldFilePath)
+        } else null
+
+        if (plugin.configManager.isReplayApplyWorldSnapshot() && recording.worldFilePath.isBlank()) {
+            EvidexMessages.warn(viewer, "Sin snapshot de mundo — solo entidades grabadas")
+        }
+
+        if (snapshot == null || snapshot.blocks.isEmpty()) {
+            if (plugin.configManager.isReplayApplyWorldSnapshot() && recording.worldFilePath.isNotBlank()) {
+                EvidexMessages.warn(viewer, "Snapshot no disponible — mapa en vivo")
+            }
+            prepareBlockTimeline()
+            onReady()
+            return
+        }
+
+        blockTimeline = buildBlockTimeline(snapshot.blocks)
+
+        worldOverlay = ReplayWorldOverlay(
+            plugin,
+            replayWorld,
+            snapshot.blocks,
+            plugin.configManager.getReplayWorldOverlayBlocksPerTick()
+        )
+        worldOverlay!!.begin(onReady)
+    }
+
+    private fun prepareBlockTimeline() {
+        if (blockTimeline != null) {
+            blockTimeline!!.initializeBaseState()
+            return
+        }
+        blockTimeline = buildBlockTimeline(emptyList())
+        blockTimeline?.initializeBaseState()
+    }
+
+    private fun buildBlockTimeline(snapshotBlocks: List<com.evidex.recording.WorldBlock>): ReplayBlockTimeline? {
+        if (recording.blockChanges.isEmpty()) return null
+
+        val snapshotMaterials = HashMap<Long, Material>(snapshotBlocks.size)
+        for (block in snapshotBlocks) {
+            val material = runCatching { Material.valueOf(block.material) }.getOrNull() ?: continue
+            snapshotMaterials[ReplayBlockKeys.pack(block.x, block.y, block.z)] = material
+        }
+        return ReplayBlockTimeline(replayWorld, snapshotMaterials, recording.blockChanges)
+    }
+
+    private fun beginPlayback() {
+        currentFrameIndex = 0
+        playheadMs = 0L
+        lastTickWallMs = System.currentTimeMillis()
+        paused = false
+        speedMultiplier = 1.0
+
+        applyFrame(recording.frames.first())
+        currentFrameIndex = 1
+        isPlaying = true
+
+        task = plugin.server.scheduler.runTaskTimer(plugin, Runnable { tick() }, 1L, 1L)
+
+        val entitySample = recording.frames.sumOf { it.nearbyEntities.size }
+        EvidexMessages.success(viewer, "Replay iniciado — ${recording.frames.size} fotogramas (modo evidencia)")
+        EvidexMessages.info(viewer, "Mundo: ${replayWorld.name} | Jugador: ${recording.playerName}")
+        EvidexMessages.info(viewer, "Controles: §e/evidex replay pause§7, §eresume§7, §espeed <0.5|1|2>§7, §eskip§7, §estop replay")
+        if (entitySample == 0) {
+            EvidexMessages.warn(viewer, "Sin entidades capturadas — graba de nuevo con jugadores/mobs cerca")
+        }
+
+        plugin.log.info("Replay iniciado: ${viewer.name} revisa a ${recording.playerName}")
+    }
+
+    fun pause() {
+        if (!isPlaying || paused) return
+        paused = true
+        EvidexMessages.info(viewer, "Replay en pausa")
+    }
+
+    fun resume() {
+        if (!isPlaying || !paused) return
+        paused = false
+        lastTickWallMs = System.currentTimeMillis()
+        EvidexMessages.info(viewer, "Replay reanudado (${speedMultiplier}x)")
+    }
+
+    fun setSpeed(multiplier: Double) {
+        speedMultiplier = multiplier.coerceIn(0.25, 4.0)
+        if (isPlaying && !paused) {
+            lastTickWallMs = System.currentTimeMillis()
+        }
+        EvidexMessages.info(viewer, "Velocidad: ${speedMultiplier}x")
+    }
+
+    fun skipToNextFlag() {
+        if (!isPlaying || recording.frames.isEmpty()) return
+        val next = recording.frames.withIndex()
+            .drop(currentFrameIndex)
+            .firstOrNull { (_, frame) ->
+                frame.eventType?.startsWith("flag:") == true ||
+                    frame.eventType in FLAG_EVENT_TYPES
+            }
+        if (next == null) {
+            EvidexMessages.warn(viewer, "No hay más flags en esta grabación")
+            return
+        }
+        seekToFrame(next.index)
+        EvidexMessages.info(viewer, "Salto al evento: ${next.value.eventType}")
+    }
+
+    fun seekToFrame(index: Int) {
+        if (recording.frames.isEmpty()) return
+        val idx = index.coerceIn(0, recording.frames.lastIndex)
+        currentFrameIndex = idx
+        playheadMs = recording.frames[idx].timestamp
+        blockTimeline?.reapplyUpTo(playheadMs)
+        applyFrame(recording.frames[idx])
+        lastTickWallMs = System.currentTimeMillis()
+        if (idx < recording.frames.lastIndex) {
+            currentFrameIndex = idx + 1
+        }
+    }
+
+    private fun saveViewerState() {
         originalGameMode = viewer.gameMode
         originalAllowFlight = viewer.allowFlight
         originalFlying = viewer.isFlying
@@ -57,44 +231,8 @@ class ReplaySession(
         originalHealth = viewer.health
         originalFood = viewer.foodLevel
         originalHeldSlot = viewer.inventory.heldItemSlot
-        viewer.inventory.contents.forEachIndexed { i, item ->
-            originalInventory[i] = item?.clone()
-        }
-        viewer.inventory.armorContents.forEachIndexed { i, item ->
-            originalArmor[i] = item?.clone()
-        }
-
-        viewer.gameMode = GameMode.ADVENTURE
-        viewer.allowFlight = true
-
-        val platform = NpcPlatformService.get()
-        if (platform != null) {
-            entityRenderer = ReplayEntityRenderer(
-                plugin, platform, viewer, replayWorld, plugin.configManager
-            )
-        } else {
-            viewer.sendMessage("§6[Evidex] §eAviso: NPCs desactivados — reinicia el servidor")
-        }
-
-        applyFrame(recording.frames.first())
-
-        isPlaying = true
-        currentFrameIndex = 1
-        startTimestamp = System.currentTimeMillis()
-
-        task = plugin.server.scheduler.runTaskTimer(plugin, Runnable {
-            tick()
-        }, 1L, 1L)
-
-        val entitySample = recording.frames.sumOf { it.nearbyEntities.size }
-        viewer.sendMessage("§6[Evidex] §aReplay iniciado — ${recording.frames.size} fotogramas (primera persona)")
-        viewer.sendMessage("§6[Evidex] §7Mundo: §f${replayWorld.name} §7| Jugador: §f${recording.playerName}")
-        if (entitySample == 0) {
-            viewer.sendMessage("§6[Evidex] §eEsta grabación no tiene entidades capturadas — graba de nuevo con jugadores/mobs cerca")
-        } else {
-            viewer.sendMessage("§6[Evidex] §7Entidades en evidencia: §f$entitySample §7registros totales en frames")
-        }
-        viewer.sendMessage("§6[Evidex] §eUsa /evidex stop replay para detener")
+        viewer.inventory.contents.forEachIndexed { i, item -> originalInventory[i] = item?.clone() }
+        viewer.inventory.armorContents.forEachIndexed { i, item -> originalArmor[i] = item?.clone() }
     }
 
     private fun ensureReplayWorld(): Boolean {
@@ -106,36 +244,39 @@ class ReplaySession(
 
         val targetWorld = Bukkit.getWorld(targetName)
         if (targetWorld == null) {
-            viewer.sendMessage("§6[Evidex] §cMundo '$targetName' no cargado. Carga ese mundo antes del replay.")
+            EvidexMessages.error(viewer, "Mundo '$targetName' no cargado")
             return false
         }
 
         replayWorld = targetWorld
         if (viewer.world.uid != targetWorld.uid) {
-            val spawn = recording.frames.firstOrNull()?.let { frame ->
-                ReplayCamera.firstPersonLocation(frame, targetWorld)
-            } ?: Location(targetWorld, 0.5, 100.0, 0.5)
+            val spawn = recording.frames.firstOrNull()?.let { ReplayCamera.firstPersonLocation(it, targetWorld) }
+                ?: Location(targetWorld, 0.5, 100.0, 0.5)
             viewer.teleport(spawn)
-            viewer.sendMessage("§6[Evidex] §7Teletransportado al mundo de la evidencia: §f$targetName")
+            EvidexMessages.info(viewer, "Teletransportado al mundo: $targetName")
         }
         return true
     }
 
-    private var startTimestamp = 0L
-
     private fun tick() {
-        if (!isPlaying) return
+        if (!isPlaying || paused) return
         if (currentFrameIndex >= recording.frames.size) {
             stop()
-            viewer.sendMessage("§6[Evidex] §aReplay finalizado")
+            EvidexMessages.success(viewer, "Replay finalizado")
             return
         }
 
-        val frame = recording.frames[currentFrameIndex]
-        val elapsed = System.currentTimeMillis() - startTimestamp
+        val now = System.currentTimeMillis()
+        val delta = now - lastTickWallMs
+        lastTickWallMs = now
+        playheadMs += (delta * speedMultiplier).toLong()
 
-        if (elapsed >= frame.timestamp) {
-            applyFrame(frame)
+        blockTimeline?.applyUpTo(playheadMs)
+
+        while (currentFrameIndex < recording.frames.size &&
+            recording.frames[currentFrameIndex].timestamp <= playheadMs
+        ) {
+            applyFrame(recording.frames[currentFrameIndex])
             currentFrameIndex++
         }
     }
@@ -143,7 +284,8 @@ class ReplaySession(
     private fun applyFrame(frame: PlayerFrame) {
         viewer.teleport(ReplayCamera.firstPersonLocation(frame, replayWorld))
         applyEquipment(frame.equipment)
-        viewer.health = frame.health.coerceIn(0.5f, viewer.maxHealth.toFloat()).toDouble()
+        val maxHp = BukkitExtensions.maxHealth(viewer)
+        viewer.health = frame.health.coerceIn(0.5f, maxHp.toFloat()).toDouble()
         viewer.foodLevel = frame.food.coerceIn(0, 20)
         viewer.inventory.heldItemSlot = frame.hotbarSlot.coerceIn(0, 8)
         viewer.isFlying = frame.isFlying && !frame.onGround
@@ -156,10 +298,20 @@ class ReplaySession(
             val nearby = frame.nearbyEntities.size
             val players = frame.nearbyEntities.count { it.entityType.equals("PLAYER", ignoreCase = true) }
             val mobs = nearby - players
-            viewer.sendActionBar(
-                Component.text(
-                    "§6Evidex §7| §f${recording.playerName} §7| frame ${currentFrameIndex + 1}/${recording.frames.size} §7| §e$nearby entidades §7(§a$players jug §7/ §c$mobs mobs§7)"
-                )
+            val state = if (paused) " §e⏸" else " §a▶ ${speedMultiplier}x"
+            val eventHint = when {
+                frame.eventType?.startsWith("flag:") == true ->
+                    " §c⚑ ${frame.eventType.removePrefix("flag:")}"
+                !frame.eventType.isNullOrBlank() ->
+                    " §e● ${frame.eventType}"
+                else -> ""
+            }
+            val shownIndex = currentFrameIndex.coerceAtLeast(1).coerceAtMost(recording.frames.size)
+            EvidexMessages.actionBar(
+                viewer,
+                "§6Evidex §7| §f${recording.playerName}$state §7| " +
+                    "frame $shownIndex/${recording.frames.size}$eventHint §7| " +
+                    "§e$nearby ent §7(§a$players jug §7/ §c$mobs mobs§7)"
             )
         }
     }
@@ -168,10 +320,10 @@ class ReplaySession(
         val inv = viewer.inventory
         inv.setItemInMainHand(itemFrom(equipment.mainHand))
         inv.setItemInOffHand(itemFrom(equipment.offHand))
-        inv.helmet = itemFrom(equipment.helmet)
-        inv.chestplate = itemFrom(equipment.chestplate)
-        inv.leggings = itemFrom(equipment.leggings)
-        inv.boots = itemFrom(equipment.boots)
+        inv.setHelmet(itemFrom(equipment.helmet))
+        inv.setChestplate(itemFrom(equipment.chestplate))
+        inv.setLeggings(itemFrom(equipment.leggings))
+        inv.setBoots(itemFrom(equipment.boots))
     }
 
     private fun itemFrom(item: ItemFrame?): ItemStack {
@@ -182,11 +334,21 @@ class ReplaySession(
 
     fun stop() {
         isPlaying = false
+        preparingWorld = false
+        paused = false
         task?.cancel()
         task = null
 
         entityRenderer?.clear()
         entityRenderer = null
+        inputGuard?.deactivate()
+        inputGuard = null
+        entityIsolation?.deactivate()
+        entityIsolation = null
+        blockTimeline?.restore()
+        blockTimeline = null
+        worldOverlay?.restore()
+        worldOverlay = null
 
         viewer.gameMode = originalGameMode
         viewer.allowFlight = originalAllowFlight
@@ -196,7 +358,12 @@ class ReplaySession(
         viewer.inventory.heldItemSlot = originalHeldSlot
         viewer.inventory.contents = originalInventory
         viewer.inventory.armorContents = originalArmor
-
         originalLocation?.let { viewer.teleport(it) }
+
+        EvidexMessages.success(viewer, "Modo evidencia finalizado — volviste al servidor normal")
+    }
+
+    companion object {
+        private val FLAG_EVENT_TYPES = setOf("attack", "mining", "place", "inventory")
     }
 }

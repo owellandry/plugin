@@ -1,0 +1,48 @@
+# Gradle / build output
+.gradle/
+build/
+
+# Kotlin / Java
+.kotlin
+*.class
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local runtime / test server
+bin/
+out/
+run/
+test-server/
+server/
+logs/
+
+# Logs and crash reports
+*.log
+hs_err_pid*
+*.hprof
+
+# Environment / secrets
+.env
+.env.*
+*.local
+
+# Local databases / cache
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary / patch files
+*.swp
+*.swo
+*.tmp
+*.orig
+*.rej

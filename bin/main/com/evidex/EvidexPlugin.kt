@@ -1,23 +1,32 @@
 package com.evidex
 
 import com.evidex.config.ConfigManager
+import com.evidex.detection.DetectionManager
 import com.evidex.dashboard.DashboardServer
 import com.evidex.playback.NpcPlatformService
 import com.evidex.playback.PacketEventsService
 import com.evidex.playback.ReplayManager
 import com.evidex.recording.RecordingManager
 import com.evidex.recording.WorldSnapshotService
-import com.evidex.storage.repository.WorldRepository
 import com.evidex.service.CleanupService
 import com.evidex.storage.database.Database
 import com.evidex.storage.database.DatabaseFactory
+import com.evidex.storage.repository.BlockChangeRepository
 import com.evidex.storage.repository.FrameRepository
 import com.evidex.storage.repository.RecordingRepository
+import com.evidex.storage.repository.ViolationRepository
+import com.evidex.storage.repository.WorldRepository
+import com.evidex.util.EvidexLog
+import com.evidex.util.PluginCompat
+import com.evidex.util.ServerCompatibility
+import com.evidex.util.StartupBanner
 import org.bukkit.plugin.java.JavaPlugin
 import java.io.File
 
 class EvidexPlugin : JavaPlugin() {
 
+    lateinit var log: EvidexLog
+        private set
     lateinit var configManager: ConfigManager
         private set
     lateinit var database: Database
@@ -30,131 +39,163 @@ class EvidexPlugin : JavaPlugin() {
         private set
     lateinit var replayManager: ReplayManager
         private set
+    lateinit var detectionManager: DetectionManager
+        private set
+    lateinit var violationRepository: ViolationRepository
+        private set
 
     private var dashboard: DashboardServer? = null
     private var cleanupService: CleanupService? = null
 
     override fun onLoad() {
-        PacketEventsService.load(this)
+        log = EvidexLog.of(this)
+        PacketEventsService.load(this, log)
     }
 
     override fun onEnable() {
+        val startupStart = System.nanoTime()
         try {
-            logger.info("=== Evidex Initialization ===")
+            val compatibility = ServerCompatibility.validate(log)
+            if (!compatibility.ok) {
+                server.pluginManager.disablePlugin(this)
+                return
+            }
 
             configManager = ConfigManager(this)
             configManager.loadConfig()
-            logger.info("Config loaded from ${dataFolder}/config.yml")
 
             if (!dataFolder.exists()) {
                 dataFolder.mkdirs()
-                logger.info("Created plugin directory: $dataFolder")
             }
 
             val dbType = configManager.getDatabaseType()
             database = DatabaseFactory.createDatabase(configManager)
             database.connect()
-            logger.info("Database connected: $dbType")
-
             database.createTables()
-            logger.info("Database tables created")
 
             recordingRepository = RecordingRepository(database)
+            violationRepository = ViolationRepository(database)
 
             val framesDir = File(configManager.getFramesDirectory())
             frameRepository = FrameRepository(framesDir)
             val worldRepository = WorldRepository(framesDir)
+            val blockChangeRepository = BlockChangeRepository(framesDir)
             val worldSnapshotService = WorldSnapshotService(configManager)
-            logger.info("Frames directory: ${framesDir.absolutePath}")
 
             recordingManager = RecordingManager(
                 this,
                 recordingRepository,
                 frameRepository,
                 worldRepository,
+                blockChangeRepository,
                 worldSnapshotService
             )
-            PacketEventsService.init(this)
-            replayManager = ReplayManager(this)
-            NpcPlatformService.init(this)
+            PacketEventsService.init(this, log)
+            replayManager = ReplayManager(this, worldRepository)
+            NpcPlatformService.init(this, log)
 
-            recordingManager.register()
+            detectionManager = DetectionManager(this, violationRepository)
+            detectionManager.start()
 
-            server.scheduler.runTask(this) { _ ->
-                try {
-                    val evidexCmd = getCommand("evidex")
-                    val executor = EvidexCommand(this)
-                    evidexCmd?.setExecutor(executor)
-                    evidexCmd?.tabCompleter = executor
-                    logger.info("Commands registered: /evidex")
-                } catch (e: Exception) {
-                    logger.warning("Failed to register /evidex command: ${e.message}")
-                }
+            server.scheduler.runTask(this, Runnable { registerCommands() })
+
+            val dashboardEnabled = configManager.isDashboardEnabled()
+            if (dashboardEnabled) {
+                dashboard = DashboardServer(
+                    this,
+                    configManager.getDashboardPort(),
+                    configManager.getDashboardBindAddress()
+                )
             }
 
-            if (configManager.isDashboardEnabled()) {
-                dashboard = DashboardServer(this, configManager.getDashboardPort())
-                logger.info("Dashboard server started on port ${configManager.getDashboardPort()}")
-            }
-
-            cleanupService = CleanupService(this, recordingRepository, frameRepository, worldRepository, configManager)
+            cleanupService = CleanupService(
+                this, recordingRepository, frameRepository, worldRepository, blockChangeRepository, configManager
+            )
             cleanupService!!.start()
 
-            logger.info("=== Evidex enabled ($dbType) ===")
-            logger.warning("[WARNING] Using /reload is NOT recommended and often causes ConcurrentModificationException + other bugs. Use /stop + restart the server instead.")
+            val startupMs = (System.nanoTime() - startupStart) / 1_000_000
+            val minecraftLabel = compatibility.release?.label()
+                ?: server.minecraftVersion
+
+            val bannerInfo = StartupBanner.Info(
+                version = PluginCompat.version(this),
+                minecraft = minecraftLabel,
+                platform = compatibility.platform,
+                database = dbType,
+                detectionEnabled = detectionManager.isEnabled(),
+                detectionChecks = detectionManager.enabledCheckCount(),
+                dashboardEnabled = dashboardEnabled,
+                dashboardPort = if (dashboardEnabled) configManager.getDashboardPort() else null,
+                dashboardAddress = if (dashboardEnabled) configManager.getDashboardBindAddress() else null,
+                serverHost = server.ip.takeIf { it.isNotBlank() },
+                preBufferEnabled = configManager.isPreBufferEnabled(),
+                preBufferSeconds = if (configManager.isPreBufferEnabled()) configManager.getPreBufferSeconds() else null,
+                cleanupEnabled = configManager.isCleanupEnabled(),
+                cleanupRetentionDays = if (configManager.isCleanupEnabled()) configManager.getCleanupRetentionDays() else null,
+                startupMs = startupMs,
+                warnings = compatibility.warnings
+            )
+
+            // Esperar unos ticks para que logs async (p. ej. PacketEvents) no corten el banner.
+            server.scheduler.runTaskLater(this, Runnable {
+                StartupBanner.print(log::consoleBlock, bannerInfo)
+            }, 10L)
         } catch (e: Exception) {
-            logger.severe("Failed to initialize Evidex: ${e.message}")
-            e.printStackTrace()
+            log.error("Error al iniciar Evidex", e)
             server.pluginManager.disablePlugin(this)
         }
     }
 
-    override fun onDisable() {
+    private fun registerCommands() {
         try {
-            val cmd = getCommand("evidex")
-            if (cmd != null) {
-                cmd.setExecutor(null)
-                cmd.tabCompleter = null
-
-                try {
-                    val commandMapField = server.javaClass.getDeclaredField("commandMap")
-                    commandMapField.isAccessible = true
-                    val commandMap = commandMapField.get(server) as org.bukkit.command.CommandMap
-
-                    val knownCommandsField = commandMap.javaClass.getDeclaredField("knownCommands")
-                    knownCommandsField.isAccessible = true
-                    @Suppress("UNCHECKED_CAST")
-                    val knownCommands = knownCommandsField.get(commandMap) as MutableMap<String, org.bukkit.command.Command>
-
-                    knownCommands.remove("evidex")
-                    knownCommands.remove("${description.name.lowercase()}:evidex")
-                    cmd.aliases.forEach { alias ->
-                        knownCommands.remove(alias)
-                        knownCommands.remove("${description.name.lowercase()}:$alias")
-                    }
-                } catch (inner: Exception) {
-                    logger.fine("Could not fully remove from knownCommands (normal on some versions): ${inner.message}")
-                }
-            }
+            val evidexCmd = getCommand("evidex") ?: return
+            val executor = EvidexCommand(this)
+            evidexCmd.setExecutor(executor)
+            evidexCmd.tabCompleter = executor
+            log.debug("Comando /evidex registrado")
         } catch (e: Exception) {
-            logger.warning("Error while unregistering /evidex command: ${e.message}")
+            log.warn("No se pudo registrar /evidex: ${e.message}")
         }
+    }
 
+    override fun onDisable() {
+        unregisterCommands()
         dashboard?.shutdown()
 
         if (::recordingManager.isInitialized) {
             recordingManager.cancelInitialSnapshots()
             recordingManager.cancelPathSnapshots()
             recordingManager.stopAll()
+            recordingManager.shutdown()
         }
         if (::replayManager.isInitialized) {
             replayManager.stopAll()
         }
         cleanupService?.stop()
+        if (::detectionManager.isInitialized) {
+            detectionManager.shutdown()
+        }
         NpcPlatformService.shutdown()
+
         if (::database.isInitialized) {
             database.disconnect()
         }
-        logger.info("Evidex disabled")
+        if (::log.isInitialized) {
+            log.info("Evidex detenido")
+        }
+    }
+
+    fun hasDetection(): Boolean = ::detectionManager.isInitialized
+
+    fun hasViolationRepository(): Boolean = ::violationRepository.isInitialized
+
+    private fun unregisterCommands() {
+        try {
+            val cmd = getCommand("evidex") ?: return
+            cmd.setExecutor(null)
+            cmd.tabCompleter = null
+        } catch (e: Exception) {
+            if (::log.isInitialized) log.debug("Limpieza de comandos: ${e.message}")
+        }
     }
 }

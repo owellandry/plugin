@@ -75,6 +75,32 @@ class SQLiteDatabase(private val config: ConfigManager) : AbstractDatabase() {
         try {
             executeUpdate("ALTER TABLE recording_metadata ADD COLUMN video_status TEXT NOT NULL DEFAULT 'pending'")
         } catch (_: Exception) {}
+        try { executeUpdate("ALTER TABLE recording_metadata ADD COLUMN source TEXT NOT NULL DEFAULT 'MANUAL'") } catch (_: Exception) {}
+        try { executeUpdate("ALTER TABLE recording_metadata ADD COLUMN trigger_check TEXT") } catch (_: Exception) {}
+        try { executeUpdate("ALTER TABLE recording_metadata ADD COLUMN peak_vl INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+        try { executeUpdate("ALTER TABLE recording_metadata ADD COLUMN violation_count INTEGER NOT NULL DEFAULT 0") } catch (_: Exception) {}
+        executeUpdate("""
+            CREATE TABLE IF NOT EXISTS violations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                player_uuid TEXT NOT NULL,
+                player_name TEXT NOT NULL,
+                check_name TEXT NOT NULL,
+                category TEXT NOT NULL,
+                vl_added INTEGER NOT NULL,
+                vl_total INTEGER NOT NULL,
+                severity TEXT NOT NULL,
+                info_json TEXT NOT NULL DEFAULT '{}',
+                recording_id INTEGER,
+                world TEXT,
+                x REAL,
+                y REAL,
+                z REAL,
+                timestamp INTEGER NOT NULL
+            )
+        """)
+        executeUpdate("CREATE INDEX IF NOT EXISTS idx_violations_player ON violations(player_name)")
+        executeUpdate("CREATE INDEX IF NOT EXISTS idx_violations_time ON violations(timestamp)")
+        executeUpdate("CREATE INDEX IF NOT EXISTS idx_violations_recording ON violations(recording_id)")
         executeUpdate("CREATE INDEX IF NOT EXISTS idx_recording_player ON recording_metadata(player_name)")
         executeUpdate("CREATE INDEX IF NOT EXISTS idx_recording_status ON recording_metadata(status)")
         executeUpdate("CREATE INDEX IF NOT EXISTS idx_recording_created ON recording_metadata(created_at)")
