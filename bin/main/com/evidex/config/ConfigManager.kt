@@ -31,8 +31,33 @@ class ConfigManager(private val plugin: EvidexPlugin) {
     }
 
     // Recording
-    fun getRecordingTickInterval(): Int = plugin.config.getInt("recording.tick-interval", 2)
+    fun getRecordingTickInterval(): Int = plugin.config.getInt("recording.tick-interval", 2).coerceAtLeast(1)
     fun getRecordingMaxDuration(): Long = plugin.config.getLong("recording.max-duration", 3_600_000)
+    fun getRecordingWorldRadius(): Int = plugin.config.getInt("recording.world-radius", 64).coerceIn(16, 128)
+    fun getRecordingWorldHeight(): Int = plugin.config.getInt("recording.world-height", 64).coerceIn(16, 128)
+    fun isPathSnapshotEnabled(): Boolean = plugin.config.getBoolean("recording.path-snapshot-enabled", true)
+    fun getPathSnapshotMaxSamples(): Int = plugin.config.getInt("recording.path-snapshot-max-samples", 12).coerceIn(2, 64)
+    fun getPathSnapshotTickInterval(): Int = plugin.config.getInt("recording.path-snapshot-tick-interval", 5).coerceAtLeast(1)
+    fun getWorldSnapshotSlices(): Int = plugin.config.getInt("recording.world-snapshot-slices", 16).coerceIn(4, 64)
+    fun getWorldSnapshotSliceInterval(): Int = plugin.config.getInt("recording.world-snapshot-slice-interval", 3).coerceAtLeast(1)
+
+    fun getEntityCaptureRadius(): Int =
+        plugin.config.getInt("recording.entity-radius", getRecordingWorldRadius()).coerceIn(8, 128)
+    fun getMaxEntitiesPerFrame(): Int =
+        plugin.config.getInt("recording.max-entities-per-frame", 48).coerceIn(4, 64)
+    fun isCapturePlayersEnabled(): Boolean = plugin.config.getBoolean("recording.capture-players", true)
+    fun isCaptureMobsEnabled(): Boolean = plugin.config.getBoolean("recording.capture-mobs", true)
+    fun isCaptureItemsEnabled(): Boolean = plugin.config.getBoolean("recording.capture-items", false)
+    fun isCaptureVisibleOnly(): Boolean = plugin.config.getBoolean("recording.capture-visible-only", false)
+    fun getCaptureFovDegrees(): Double = plugin.config.getDouble("recording.capture-fov-degrees", 110.0).coerceIn(30.0, 180.0)
+
+    // Replay
+    fun isReplayTeleportToWorld(): Boolean = plugin.config.getBoolean("replay.teleport-to-world", true)
+    fun isReplayShowPlayerNpcs(): Boolean = plugin.config.getBoolean("replay.show-player-npcs", true)
+    fun isReplayShowMobMarkers(): Boolean = plugin.config.getBoolean("replay.show-mob-markers", true)
+    fun isReplayShowActionBar(): Boolean = plugin.config.getBoolean("replay.show-action-bar", true)
+
+    fun getMaxEntitiesPerFrameWrite(): Int = getMaxEntitiesPerFrame()
 
     // Cleanup
     fun isCleanupEnabled(): Boolean = plugin.config.getBoolean("cleanup.enabled", true)

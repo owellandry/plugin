@@ -8,8 +8,8 @@ class RecordingRepository(private val db: Database) {
     fun create(metadata: RecordingMetadata): Long {
         val sql = """
             INSERT INTO recording_metadata 
-                (player_name, start_timestamp, end_timestamp, world, x, y, z, frame_count, file_path, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (player_name, start_timestamp, end_timestamp, world, x, y, z, frame_count, file_path, world_file_path, video_file_path, video_status, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         db.executeUpdate(sql, listOf(
             metadata.playerName,
@@ -21,6 +21,9 @@ class RecordingRepository(private val db: Database) {
             metadata.z,
             metadata.frameCount,
             metadata.filePath,
+            metadata.worldFilePath,
+            metadata.videoFilePath,
+            metadata.videoStatus,
             metadata.status,
             metadata.createdAt
         ))
@@ -35,20 +38,35 @@ class RecordingRepository(private val db: Database) {
     fun update(metadata: RecordingMetadata) {
         val sql = """
             UPDATE recording_metadata SET
-                end_timestamp = ?, frame_count = ?, file_path = ?, status = ?
+                end_timestamp = ?, frame_count = ?, file_path = ?, world_file_path = ?,
+                video_file_path = ?, video_status = ?, status = ?
             WHERE id = ?
         """
         db.executeUpdate(sql, listOf(
             metadata.endTimestamp,
             metadata.frameCount,
             metadata.filePath,
+            metadata.worldFilePath,
+            metadata.videoFilePath,
+            metadata.videoStatus,
             metadata.status,
             metadata.id
         ))
     }
 
+    fun updateVideoStatus(id: Long, status: String, filePath: String) {
+        db.executeUpdate(
+            "UPDATE recording_metadata SET video_status = ?, video_file_path = ? WHERE id = ?",
+            listOf(status, filePath, id)
+        )
+    }
+
     fun updateFilePath(id: Long, filePath: String) {
         db.executeUpdate("UPDATE recording_metadata SET file_path = ? WHERE id = ?", listOf(filePath, id))
+    }
+
+    fun updateWorldFilePath(id: Long, worldFilePath: String) {
+        db.executeUpdate("UPDATE recording_metadata SET world_file_path = ? WHERE id = ?", listOf(worldFilePath, id))
     }
 
     fun findByPlayer(playerName: String): List<RecordingMetadata> {
@@ -105,6 +123,9 @@ class RecordingRepository(private val db: Database) {
             z = (row["z"] as? Number)?.toDouble(),
             frameCount = (row["frame_count"] as? Number)?.toInt() ?: 0,
             filePath = row["file_path"] as? String ?: "",
+            worldFilePath = row["world_file_path"] as? String ?: "",
+            videoFilePath = row["video_file_path"] as? String ?: "",
+            videoStatus = row["video_status"] as? String ?: "pending",
             status = row["status"] as? String ?: "recording",
             createdAt = (row["created_at"] as? Number)?.toLong() ?: 0
         )

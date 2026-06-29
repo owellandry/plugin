@@ -4,11 +4,13 @@ import com.evidex.EvidexPlugin
 import com.evidex.config.ConfigManager
 import com.evidex.storage.repository.FrameRepository
 import com.evidex.storage.repository.RecordingRepository
+import com.evidex.storage.repository.WorldRepository
 
 class CleanupService(
     private val plugin: EvidexPlugin,
     private val recordingRepository: RecordingRepository,
     private val frameRepository: FrameRepository,
+    private val worldRepository: WorldRepository,
     private val config: ConfigManager
 ) {
     private var task: org.bukkit.scheduler.BukkitTask? = null
@@ -40,8 +42,9 @@ class CleanupService(
             for (metadata in expired) {
                 try {
                     frameRepository.deleteFile(metadata.filePath)
+                    worldRepository.deleteFile(metadata.worldFilePath)
                 } catch (e: Exception) {
-                    plugin.logger.warning("Failed to delete frame file: ${metadata.filePath} - ${e.message}")
+                    plugin.logger.warning("Failed to delete recording files: ${metadata.filePath} - ${e.message}")
                 }
             }
 

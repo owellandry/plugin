@@ -60,11 +60,21 @@ class SQLiteDatabase(private val config: ConfigManager) : AbstractDatabase() {
                 y REAL,
                 z REAL,
                 frame_count INTEGER DEFAULT 0,
-                file_path TEXT NOT NULL,
+                file_path TEXT NOT NULL DEFAULT '',
+                world_file_path TEXT NOT NULL DEFAULT '',
                 status TEXT DEFAULT 'recording',
                 created_at INTEGER NOT NULL
             )
         """)
+        try {
+            executeUpdate("ALTER TABLE recording_metadata ADD COLUMN world_file_path TEXT NOT NULL DEFAULT ''")
+        } catch (_: Exception) {}
+        try {
+            executeUpdate("ALTER TABLE recording_metadata ADD COLUMN video_file_path TEXT NOT NULL DEFAULT ''")
+        } catch (_: Exception) {}
+        try {
+            executeUpdate("ALTER TABLE recording_metadata ADD COLUMN video_status TEXT NOT NULL DEFAULT 'pending'")
+        } catch (_: Exception) {}
         executeUpdate("CREATE INDEX IF NOT EXISTS idx_recording_player ON recording_metadata(player_name)")
         executeUpdate("CREATE INDEX IF NOT EXISTS idx_recording_status ON recording_metadata(status)")
         executeUpdate("CREATE INDEX IF NOT EXISTS idx_recording_created ON recording_metadata(created_at)")

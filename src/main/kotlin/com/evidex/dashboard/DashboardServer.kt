@@ -16,7 +16,7 @@ class DashboardServer(
 
     init {
         staticDir.mkdirs()
-        extractStaticFiles() // always refresh latest UI (login, new theme, etc)
+        extractStaticFiles()
         start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
         plugin.logger.info("Dashboard started on http://0.0.0.0:$port (with auth)")
     }
@@ -25,7 +25,6 @@ class DashboardServer(
         val uri = session.uri
         val method = session.method
 
-        // CORS preflight
         if (method == Method.OPTIONS) {
             val resp = newFixedLengthResponse(Response.Status.OK, "text/plain", "")
             addCors(resp)
@@ -55,9 +54,7 @@ class DashboardServer(
 
         return try {
             when {
-                // Auth public endpoints
                 uri == "/api/auth/login" && method == Method.POST -> {
-                    // Perform auth directly to get clean token for cookie
                     val uname = params["username"] ?: ""
                     val pw = params["password"] ?: ""
                     plugin.logger.info("[Dashboard] Login attempt for user='${uname}' (pw len=${pw.length})")
@@ -71,7 +68,6 @@ class DashboardServer(
                         resp
                     } else {
                         plugin.logger.info("[Dashboard] Login FAILED for '${uname}': ${result.error}")
-                        // IMPORTANT: Return 200 with success:false so frontend doesn't treat bad creds as connection error
                         val msg = result.error ?: "Usuario o contraseña incorrectos"
                         val r = newFixedLengthResponse(Response.Status.OK, "application/json", """{"success":false,"error":"$msg"}""")
                         addCors(r)
@@ -80,33 +76,27 @@ class DashboardServer(
                 }
                 uri == "/api/auth/logout" && method == Method.POST -> apiHandler.logout(token)
                 uri == "/api/auth/me" && method == Method.GET -> apiHandler.me(authSession)
-                uri == "/api/auth/change-password" && method == Method.POST -> 
+                uri == "/api/auth/change-password" && method == Method.POST ->
                     apiHandler.changePassword(authSession, params["current"] ?: "", params["new"] ?: "")
                 uri == "/api/auth/force-change-password" && method == Method.POST ->
                     apiHandler.forceChangePassword(authSession, params["new"] ?: "")
 
-                // Protected APIs
                 else -> {
                     if (authSession == null && !uri.startsWith("/api/auth/")) {
                         return jsonError("No autenticado", Response.Status.UNAUTHORIZED)
                     }
                     when {
                         uri == "/api/players" && method == Method.GET -> apiHandler.getPlayers()
+                        uri == "/api/admins" && method == Method.GET -> apiHandler.getAdmins()
                         uri == "/api/recordings" && method == Method.GET -> apiHandler.getRecordings()
                         uri == "/api/recordings/active" && method == Method.GET -> apiHandler.getActiveRecordings()
                         uri == "/api/record/start" && method == Method.POST -> apiHandler.startRecording(params["player"] ?: "")
                         uri == "/api/record/stop" && method == Method.POST -> apiHandler.stopRecording(params["player"] ?: "")
-                        uri == "/api/replay/start-id" && method == Method.POST -> 
+                        uri == "/api/replay/start-id" && method == Method.POST ->
                             apiHandler.startReplayById((params["id"] ?: "0").toLongOrNull() ?: 0L, params["viewer"] ?: "")
                         uri == "/api/replay/stop" && method == Method.POST -> apiHandler.stopReplay(params["viewer"] ?: params["admin"] ?: "")
-                        uri == "/api/recordings/delete" && method == Method.POST -> 
+                        uri == "/api/recordings/delete" && method == Method.POST ->
                             apiHandler.deleteRecording((params["id"] ?: "0").toLongOrNull() ?: 0L)
-                        uri.matches(Regex("^/api/recordings/\\d+/frames$")) && method == Method.GET -> {
-                            val id = uri.substringAfter("/api/recordings/").substringBefore("/frames").toLongOrNull() ?: 0L
-                            val offset = (session.parameters["offset"]?.firstOrNull() ?: "0").toIntOrNull() ?: 0
-                            val limit = (session.parameters["limit"]?.firstOrNull() ?: "500").toIntOrNull() ?: 500
-                            apiHandler.getRecordingFrames(id, offset, limit)
-                        }
                         uri.matches(Regex("^/api/recordings/\\d+$")) && method == Method.DELETE -> {
                             val id = uri.removePrefix("/api/recordings/").toLongOrNull() ?: 0L
                             apiHandler.deleteRecording(id)
@@ -125,8 +115,6 @@ class DashboardServer(
         val path = if (uri == "/") "/index.html" else uri
         val fileName = path.trimStart('/')
 
-        // First, try to serve directly from the plugin JAR resources (always fresh version from current jar)
-        // This prevents stale dashboard files after updates/reloads
         val resourcePath = "/static/$fileName"
         val stream = javaClass.getResourceAsStream(resourcePath)
         if (stream != null) {
@@ -150,7 +138,6 @@ class DashboardServer(
             }
         }
 
-        // Fallback to extracted file on disk (for customization or if resource not found)
         val file = File(staticDir, fileName)
         if (!file.exists() || file.isDirectory) {
             return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
@@ -178,19 +165,12 @@ class DashboardServer(
         }.toMap()
     }
 
-    /**
-     * Robustly extract POST params.
-     * NanoHTTPD populates `parameters` + the passed body map for form data.
-     * For application/json it puts the raw body under "postData".
-     * This supports both the old JSON sends and form-urlencoded.
-     */
     private fun parsePostParams(session: IHTTPSession, body: Map<String, String>): Map<String, String> {
         val base = session.parameters.mapValues { it.value.firstOrNull() ?: "" } + body
 
         val postData = body["postData"]?.trim() ?: return base
         if (!postData.startsWith("{")) return base
 
-        // Very lightweight JSON field extractor for flat objects like {"username":"foo","password":"bar","id":123}
         val extracted = mutableMapOf<String, String>()
         try {
             val regex = """"(\w+)"\s*:\s*(?:"([^"]*)"|\b(true|false|null|-?\d+\.?\d*)\b)""".toRegex()
@@ -204,12 +184,6 @@ class DashboardServer(
             }
         } catch (_: Exception) {}
         return base + extracted
-    }
-
-    private fun extractToken(json: String?): String? {
-        if (json == null) return null
-        val match = Regex("\"token\"\\s*:\\s*\"([^\"]+)\"").find(json)
-        return match?.groupValues?.get(1)
     }
 
     private fun addCors(resp: Response) {
@@ -227,7 +201,6 @@ class DashboardServer(
     private fun extractStaticFiles() {
         plugin.logger.info("[Evidex] Extracting fresh static dashboard files...")
 
-        // Aggressively clean the entire static directory to prevent stale files (especially after /reload or jar updates)
         try {
             if (staticDir.exists()) {
                 staticDir.deleteRecursively()

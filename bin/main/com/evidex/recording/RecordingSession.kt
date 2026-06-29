@@ -4,36 +4,53 @@ import com.evidex.EvidexPlugin
 import com.evidex.math.Angle
 import com.evidex.math.Vec3d
 import org.bukkit.entity.Player
+import org.bukkit.event.entity.EntityDamageEvent
 import org.bukkit.event.EventHandler
 import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
 import org.bukkit.event.player.*
-import org.bukkit.event.entity.EntityToggleSwimEvent
-import org.bukkit.Bukkit
+import org.bukkit.scheduler.BukkitTask
 
 class RecordingSession(
     private val plugin: EvidexPlugin,
-    val player: Player
+    val player: Player,
+    private val onMaxDuration: () -> Unit
 ) : Listener {
 
     val data = RecordingData(
         playerName = player.name,
-        startTimestamp = System.currentTimeMillis()
+        startTimestamp = System.currentTimeMillis(),
+        worldName = player.world.name
     )
 
     private var isRecording = true
+    private var tickTask: BukkitTask? = null
+    private var maxDurationTask: BukkitTask? = null
 
     init {
         plugin.server.pluginManager.registerEvents(this, plugin)
         captureFrame()
+
+        val tickInterval = plugin.configManager.getRecordingTickInterval().coerceAtLeast(1).toLong()
+        tickTask = plugin.server.scheduler.runTaskTimer(plugin, Runnable { captureFrame() }, tickInterval, tickInterval)
+
+        val maxDurationMs = plugin.configManager.getRecordingMaxDuration()
+        if (maxDurationMs > 0) {
+            val maxTicks = (maxDurationMs / 50L).coerceAtLeast(1L)
+            maxDurationTask = plugin.server.scheduler.runTaskLater(plugin, Runnable {
+                if (isRecording) onMaxDuration()
+            }, maxTicks)
+        }
     }
 
     fun stop() {
         isRecording = false
+        tickTask?.cancel()
+        maxDurationTask?.cancel()
         HandlerList.unregisterAll(this)
     }
 
-    fun captureFrame() {
+    fun captureFrame(handSwing: Boolean = false) {
         if (!isRecording || !player.isOnline) return
 
         val loc = player.location
@@ -67,8 +84,12 @@ class RecordingSession(
             isSneaking = player.isSneaking,
             isSprinting = player.isSprinting,
             isFlying = player.isFlying,
-            handSwing = false,
-            equipment = equipment
+            handSwing = handSwing,
+            equipment = equipment,
+            health = player.health.toFloat(),
+            food = player.foodLevel,
+            hotbarSlot = player.inventory.heldItemSlot,
+            nearbyEntities = EntityCapture.capture(player, plugin.configManager)
         )
 
         data.frames.add(frame)
@@ -115,6 +136,25 @@ class RecordingSession(
     @EventHandler
     fun onSwingHand(event: PlayerAnimationEvent) {
         if (event.player != player || !isRecording) return
+        captureFrame(handSwing = true)
+    }
+
+    @EventHandler
+    fun onDropItem(event: PlayerDropItemEvent) {
+        if (event.player != player || !isRecording) return
         captureFrame()
     }
+
+    @EventHandler
+    fun onPickupItem(event: PlayerAttemptPickupItemEvent) {
+        if (event.player != player || !isRecording) return
+        captureFrame()
+    }
+
+    @EventHandler
+    fun onDamage(event: EntityDamageEvent) {
+        if (event.entity != player || !isRecording) return
+        captureFrame()
+    }
+
 }

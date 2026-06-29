@@ -1,7 +1,6 @@
 package com.evidex.dashboard
 
 import com.evidex.EvidexPlugin
-import com.evidex.storage.model.RecordingMetadata
 import fi.iki.elonen.NanoHTTPD
 import org.bukkit.Bukkit
 import java.util.concurrent.CompletableFuture
@@ -10,6 +9,10 @@ class ApiHandler(
     private val plugin: EvidexPlugin,
     private val authManager: AuthManager? = null
 ) {
+
+    companion object {
+        private const val ADMIN_PERMISSION = "evidex.admin"
+    }
 
     // --- Auth ---
 
@@ -53,7 +56,7 @@ class ApiHandler(
         }
     }
 
-    // --- Existing API ---
+    // --- API ---
 
     fun getPlayers(): NanoHTTPD.Response {
         val future = CompletableFuture<String>()
@@ -66,13 +69,24 @@ class ApiHandler(
         return jsonResponse(future.get())
     }
 
+    fun getAdmins(): NanoHTTPD.Response {
+        val future = CompletableFuture<String>()
+        Bukkit.getScheduler().runTask(plugin, Runnable {
+            val admins = Bukkit.getOnlinePlayers()
+                .filter { it.hasPermission(ADMIN_PERMISSION) }
+                .map { it.name }
+            future.complete(admins.joinToString(",", "[", "]") { "\"${it}\"" })
+        })
+        return jsonResponse(future.get())
+    }
+
     fun getRecordings(): NanoHTTPD.Response {
         val future = CompletableFuture<String>()
         Bukkit.getScheduler().runTask(plugin, Runnable {
             val metas = plugin.recordingManager.getAllRecordingMetadata()
             val list = metas.map { meta ->
-                val duration = meta.endTimestamp?.let { (it - meta.startTimestamp) / 1000.0 } ?: 0.0
-                """{"id":"${meta.id}","targetPlayer":"${meta.playerName}","caseName":"","duration":$duration,"frameCount":${meta.frameCount},"world":"${meta.world ?: ""}","createdAt":${meta.createdAt}}"""
+                val duration = meta.endTimestamp?.let { it / 1000.0 } ?: 0.0
+                """{"id":"${meta.id}","targetPlayer":"${meta.playerName}","duration":$duration,"frameCount":${meta.frameCount},"world":"${meta.world ?: ""}","createdAt":${meta.createdAt}}"""
             }
             future.complete("[${list.joinToString(",")}]")
         })
@@ -133,13 +147,17 @@ class ApiHandler(
     }
 
     fun startReplayById(recordingId: Long, viewerName: String): NanoHTTPD.Response {
-        if (viewerName.isBlank()) return errorResponse("Nombre del staff requerido")
+        if (viewerName.isBlank()) return errorResponse("Selecciona un admin online")
 
         val future = CompletableFuture<String>()
         Bukkit.getScheduler().runTask(plugin, Runnable {
             val viewer = Bukkit.getPlayer(viewerName)
             if (viewer == null) {
-                future.complete("""{"success":false,"error":"Staff no está en línea"}""")
+                future.complete("""{"success":false,"error":"El admin no está en línea"}""")
+                return@Runnable
+            }
+            if (!viewer.hasPermission(ADMIN_PERMISSION)) {
+                future.complete("""{"success":false,"error":"Solo admins con permiso evidex.admin pueden ver replays"}""")
                 return@Runnable
             }
             val recording = plugin.recordingManager.getRecordingById(recordingId)
@@ -148,7 +166,7 @@ class ApiHandler(
                 return@Runnable
             }
             plugin.replayManager.startReplay(viewer, recording)
-            future.complete("""{"success":true,"message":"Replay iniciado para ${viewer.name}"}""")
+            future.complete("""{"success":true,"message":"Replay iniciado en el juego para ${viewer.name}"}""")
         })
         return jsonResponse(future.get())
     }
@@ -161,6 +179,10 @@ class ApiHandler(
             val viewer = Bukkit.getPlayer(viewerName)
             if (viewer == null) {
                 future.complete("""{"success":false,"error":"Jugador no encontrado"}""")
+                return@Runnable
+            }
+            if (!viewer.hasPermission(ADMIN_PERMISSION)) {
+                future.complete("""{"success":false,"error":"Solo admins pueden detener replays"}""")
                 return@Runnable
             }
             plugin.replayManager.stopReplay(viewer)
@@ -180,49 +202,6 @@ class ApiHandler(
             } else {
                 future.complete("""{"success":false,"error":"No se pudo eliminar"}""")
             }
-        })
-        return jsonResponse(future.get())
-    }
-
-    fun getRecordingFrames(id: Long, offset: Int = 0, limit: Int = 500): NanoHTTPD.Response {
-        if (id <= 0) return errorResponse("ID inválido")
-
-        val future = CompletableFuture<String>()
-        Bukkit.getScheduler().runTask(plugin, Runnable {
-            val allFrames = plugin.recordingManager.getFrames(id)
-            val total = allFrames.size
-            val slice = allFrames.drop(offset).take(limit)
-            if (slice.isEmpty()) {
-                future.complete("""{"id":"$id","offset":$offset,"limit":$limit,"total":$total,"frames":[]}""")
-                return@Runnable
-            }
-
-            val json = slice.joinToString(",") { frame ->
-                // flags as string list
-                val flags = mutableListOf<String>()
-                if (frame.onGround) flags.add("ON_GROUND")
-                if (frame.isSneaking) flags.add("SNEAKING")
-                if (frame.isSprinting) flags.add("SPRINTING")
-                if (frame.isFlying) flags.add("FLYING")
-                if (frame.handSwing) flags.add("HAND_SWING")
-
-                // equipment as filtered list
-                val eq = mutableListOf<String>()
-                if (frame.equipment.mainHand?.material != null) eq.add("MH:${frame.equipment.mainHand.material}")
-                if (frame.equipment.offHand?.material != null) eq.add("OH:${frame.equipment.offHand.material}")
-                if (frame.equipment.helmet?.material != null) eq.add(frame.equipment.helmet.material)
-                if (frame.equipment.chestplate?.material != null) eq.add(frame.equipment.chestplate.material)
-                if (frame.equipment.leggings?.material != null) eq.add(frame.equipment.leggings.material)
-                if (frame.equipment.boots?.material != null) eq.add(frame.equipment.boots.material)
-
-                val flagsJson = if (flags.isEmpty()) "" else flags.joinToString("\",\"")
-                val eqJson = if (eq.isEmpty()) "" else eq.joinToString("\",\"")
-
-                val flagsArray = if (flagsJson.isEmpty()) "[]" else """["$flagsJson"]"""
-                val eqArray = if (eqJson.isEmpty()) "[]" else """["$eqJson"]"""
-                """{"timestamp":${frame.timestamp},"x":${frame.position.x},"y":${frame.position.y},"z":${frame.position.z},"yaw":${frame.yaw.degrees},"pitch":${frame.pitch.degrees},"flags":$flagsArray,"equipment":$eqArray}"""
-            }
-            future.complete("""{"id":"$id","offset":$offset,"limit":$limit,"total":$total,"frames":[$json]}""")
         })
         return jsonResponse(future.get())
     }

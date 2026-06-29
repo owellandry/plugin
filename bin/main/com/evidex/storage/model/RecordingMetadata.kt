@@ -11,6 +11,9 @@ data class RecordingMetadata(
     val z: Double? = null,
     val frameCount: Int = 0,
     val filePath: String = "",
+    val worldFilePath: String = "",
+    val videoFilePath: String = "",
+    val videoStatus: String = "pending",
     val status: String = "recording",
     val createdAt: Long = System.currentTimeMillis()
 )

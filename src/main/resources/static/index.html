@@ -69,7 +69,7 @@
                         <span class="icon-slot icon-title" data-icon="folder" data-size="18"></span>
                         EVIDENCIAS GUARDADAS
                     </div>
-                    <div class="panel-sub">Haz clic en "VER" para reproducir</div>
+                    <div class="panel-sub">Reproduce en el juego — solo admins online</div>
                 </div>
                 <div id="saved-recordings" class="evidence-list"></div>
             </section>
@@ -78,64 +78,27 @@
         </div>
     </div>
 
-    <div id="player-modal" class="modal viewer-modal" style="display:none">
-        <div class="viewer-container">
-            <div class="viewer-header">
-                <div>
-                    <h3>
-                        <span class="icon-slot icon-title" data-icon="video" data-size="20"></span>
-                        REPRODUCCIÓN
-                    </h3>
-                    <div id="viewer-info" class="viewer-info"></div>
-                </div>
-                <div class="viewer-header-actions">
-                    <button class="close-btn" onclick="closePlayer()" aria-label="Cerrar">
-                        <span class="icon-slot" data-icon="close" data-size="24"></span>
-                    </button>
-                </div>
+    <div id="replay-modal" class="modal" style="display:none">
+        <div class="replay-dialog">
+            <div class="replay-header">
+                <h3>
+                    <span class="icon-slot icon-title" data-icon="play" data-size="20"></span>
+                    REPRODUCIR EN MINECRAFT
+                </h3>
+                <button class="close-btn" onclick="closeReplayModal()" aria-label="Cerrar">
+                    <span class="icon-slot" data-icon="close" data-size="24"></span>
+                </button>
             </div>
-
-            <div class="viewer-main">
-                <div class="canvas-container">
-                    <canvas id="replay-canvas"></canvas>
-                </div>
-                <div class="viewer-side">
-                    <div class="side-section">
-                        <strong>POSICIÓN</strong>
-                        <div id="player-pos" class="info-box">X: — Y: — Z: —</div>
-                    </div>
-                    <div class="side-section">
-                        <strong>ACCIÓN</strong>
-                        <div id="player-flags" class="info-box">—</div>
-                    </div>
-                    <div class="side-section">
-                        <strong>EQUIPO</strong>
-                        <div id="player-equip" class="info-box">—</div>
-                    </div>
-                    <div class="side-section">
-                        <strong>CONTROLES</strong>
-                        <div class="viewer-controls">
-                            <button class="mc-btn mc-btn-primary small icon-btn" id="play-btn" onclick="playerToggle()" aria-label="Reproducir"></button>
-                            <button class="mc-btn mc-btn-ghost small icon-btn" onclick="playerReset()" aria-label="Reiniciar">
-                                <span class="icon-slot" data-icon="reload" data-size="16"></span>
-                            </button>
-                        </div>
-                        <div class="speed-controls">
-                            <button onclick="playerSpeed(0.5)">0.5x</button>
-                            <button onclick="playerSpeed(1)" class="active">1x</button>
-                            <button onclick="playerSpeed(2)">2x</button>
-                            <button onclick="playerSpeed(5)">5x</button>
-                        </div>
-                    </div>
-                </div>
+            <div class="replay-body">
+                <p id="replay-info" class="replay-info"></p>
+                <label class="replay-label" for="admin-select">Admin que verá el replay (debe estar online)</label>
+                <select id="admin-select" class="replay-select"></select>
+                <p id="replay-hint" class="replay-hint">El admin entrará al juego y verá la grabación como si fuera el jugador.</p>
             </div>
-
-            <div class="viewer-timeline">
-                <input type="range" id="scrubber" min="0" max="100" step="0.1" value="0">
-                <div class="time-display">
-                    <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
-                    <span id="frame-info" style="margin-left:12px;opacity:.6"></span>
-                </div>
+            <div class="replay-actions">
+                <button class="mc-btn mc-btn-ghost" onclick="closeReplayModal()">CANCELAR</button>
+                <button class="mc-btn mc-btn-danger" id="stop-replay-btn" onclick="stopReplay()" style="display:none">DETENER</button>
+                <button class="mc-btn mc-btn-primary" id="play-replay-btn" onclick="startReplay()">REPRODUCIR</button>
             </div>
         </div>
     </div>

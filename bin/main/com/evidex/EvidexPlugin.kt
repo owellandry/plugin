@@ -2,8 +2,12 @@ package com.evidex
 
 import com.evidex.config.ConfigManager
 import com.evidex.dashboard.DashboardServer
+import com.evidex.playback.NpcPlatformService
+import com.evidex.playback.PacketEventsService
 import com.evidex.playback.ReplayManager
 import com.evidex.recording.RecordingManager
+import com.evidex.recording.WorldSnapshotService
+import com.evidex.storage.repository.WorldRepository
 import com.evidex.service.CleanupService
 import com.evidex.storage.database.Database
 import com.evidex.storage.database.DatabaseFactory
@@ -30,6 +34,10 @@ class EvidexPlugin : JavaPlugin() {
     private var dashboard: DashboardServer? = null
     private var cleanupService: CleanupService? = null
 
+    override fun onLoad() {
+        PacketEventsService.load(this)
+    }
+
     override fun onEnable() {
         try {
             logger.info("=== Evidex Initialization ===")
@@ -55,14 +63,23 @@ class EvidexPlugin : JavaPlugin() {
 
             val framesDir = File(configManager.getFramesDirectory())
             frameRepository = FrameRepository(framesDir)
+            val worldRepository = WorldRepository(framesDir)
+            val worldSnapshotService = WorldSnapshotService(configManager)
             logger.info("Frames directory: ${framesDir.absolutePath}")
 
-            recordingManager = RecordingManager(this, recordingRepository, frameRepository)
+            recordingManager = RecordingManager(
+                this,
+                recordingRepository,
+                frameRepository,
+                worldRepository,
+                worldSnapshotService
+            )
+            PacketEventsService.init(this)
             replayManager = ReplayManager(this)
+            NpcPlatformService.init(this)
 
             recordingManager.register()
 
-            // Delay command registration slightly. This helps avoid race conditions with Paper's async command tree builder during reloads.
             server.scheduler.runTask(this) { _ ->
                 try {
                     val evidexCmd = getCommand("evidex")
@@ -80,13 +97,8 @@ class EvidexPlugin : JavaPlugin() {
                 logger.info("Dashboard server started on port ${configManager.getDashboardPort()}")
             }
 
-            cleanupService = CleanupService(this, recordingRepository, frameRepository, configManager)
+            cleanupService = CleanupService(this, recordingRepository, frameRepository, worldRepository, configManager)
             cleanupService!!.start()
-            // Note: CleanupService also logs its own start message
-
-            if (server.isPrimaryThread.not()) {
-                // Rare, but during reload this can happen
-            }
 
             logger.info("=== Evidex enabled ($dbType) ===")
             logger.warning("[WARNING] Using /reload is NOT recommended and often causes ConcurrentModificationException + other bugs. Use /stop + restart the server instead.")
@@ -98,14 +110,12 @@ class EvidexPlugin : JavaPlugin() {
     }
 
     override fun onDisable() {
-        // Unregister command as thoroughly as possible to minimize ConcurrentModificationException during /reload
         try {
             val cmd = getCommand("evidex")
             if (cmd != null) {
                 cmd.setExecutor(null)
                 cmd.tabCompleter = null
 
-                // Attempt to remove from Bukkit's internal command map (helps with reload issues)
                 try {
                     val commandMapField = server.javaClass.getDeclaredField("commandMap")
                     commandMapField.isAccessible = true
@@ -118,13 +128,11 @@ class EvidexPlugin : JavaPlugin() {
 
                     knownCommands.remove("evidex")
                     knownCommands.remove("${description.name.lowercase()}:evidex")
-                    // Remove any aliases if present
                     cmd.aliases.forEach { alias ->
                         knownCommands.remove(alias)
                         knownCommands.remove("${description.name.lowercase()}:$alias")
                     }
                 } catch (inner: Exception) {
-                    // Internal fields may vary by version; this is best-effort
                     logger.fine("Could not fully remove from knownCommands (normal on some versions): ${inner.message}")
                 }
             }
@@ -135,12 +143,15 @@ class EvidexPlugin : JavaPlugin() {
         dashboard?.shutdown()
 
         if (::recordingManager.isInitialized) {
+            recordingManager.cancelInitialSnapshots()
+            recordingManager.cancelPathSnapshots()
             recordingManager.stopAll()
         }
         if (::replayManager.isInitialized) {
             replayManager.stopAll()
         }
         cleanupService?.stop()
+        NpcPlatformService.shutdown()
         if (::database.isInitialized) {
             database.disconnect()
         }
