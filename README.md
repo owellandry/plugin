@@ -111,12 +111,13 @@ Medidas ya aplicadas:
 - **Sin credenciales por defecto fijas:** el usuario `admin` se crea con **contraseña temporal
   aleatoria impresa en consola** (obliga a cambiarla al primer login).
 - **Lockout de login:** 5 intentos fallidos → bloqueo de 5 min por usuario.
-- Hash de contraseñas **PBKDF2-HMAC-SHA256** con salt por contraseña.
+- Hash de contraseñas **PBKDF2-HMAC-SHA256**, salt por contraseña, **600k iteraciones** (piso OWASP 2024).
 - **Sin CORS `*`** (el dashboard es same-origin).
+- JSON del dashboard vía **Gson** (sin interpolación de strings ni parseo regex → sin inyección).
 
 Pendiente (ver [docs/research/03](docs/research/03-architecture-security-ops.md) §1): tokens CSRF
-en endpoints destructivos, cookie `Secure` tras TLS, subir iteraciones PBKDF2 a ≥600k o migrar a
-Argon2id, cabeceras de seguridad (CSP, X-Frame-Options).
+en endpoints destructivos, cookie `Secure` tras TLS, cabeceras de seguridad (CSP, X-Frame-Options),
+y evaluar migración a Argon2id.
 
 ---
 
@@ -156,12 +157,14 @@ Investigación técnica que respalda el diseño (patrones de la industria, fuent
 
 Mejoras recientes:
 - Limpieza del repo (artefactos de build fuera de VCS, config Fabric muerta eliminada).
-- Fixes de seguridad del dashboard (bind localhost, sin backdoor admin/admin, lockout, sin CORS `*`).
-- Fixes de falsos positivos en detección (manejo de teleport, Spider, Flight, NoFall, AimAssist).
+- Seguridad dashboard: bind localhost, sin backdoor admin/admin, lockout, sin CORS `*`,
+  PBKDF2 600k, **JSON vía Gson** (sin interpolación de strings ni parseo regex).
+- Fixes de falsos positivos en detección: manejo de teleport/respawn, Spider, Flight, NoFall,
+  AimAssist, KillAura (sweep + noLOS por pared real), Velocity (escudo/agua/etc), Reach (hitbox).
 
 Próximos pasos sugeridos (de la investigación):
 - Migrar a detección con compensación de lag vía transacciones de PacketEvents.
-- Registro central de exenciones (teleport/respawn/knockback/elytra grace).
-- VL ponderado por confianza; compensación por TPS/ping en config.
-- Migrar JSON del dashboard a una librería (hoy interpolación de strings + regex).
-- Resolver drivers JDBC vía Paper `PluginLoader` en vez de shadear los 4.
+- Registro central de exenciones (teleport/respawn/knockback/elytra grace) + compensación TPS/ping.
+- VL ponderado por confianza.
+- Tokens CSRF en el dashboard + cabeceras de seguridad + cookie `Secure` tras TLS.
+- Resolver drivers JDBC vía Paper `PluginLoader` en vez de shadear los 4 (jar hoy ~31 MB).
