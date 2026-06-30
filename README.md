@@ -70,12 +70,11 @@ Requisitos: JDK (toolchain configurada en `build.gradle.kts`), Gradle wrapper in
 # salida: build/libs/evidex-plugin.jar
 ```
 
-Solo Kotlin (no hay fuentes Java). El jar final es un shadow-jar con dependencias relocadas
-(PacketEvents, npc-lib, Kotlin stdlib, drivers JDBC, HikariCP).
-
-> **Nota de packaging (pendiente):** hoy se shadean los 4 drivers JDBC → jar pesado. Ver
-> [docs/research/03](docs/research/03-architecture-security-ops.md) §4 para migrar a `libraries`
-> loader de Paper y resolver solo el driver configurado.
+Solo Kotlin (no hay fuentes Java). El jar (~7.4 MB) shadea+reloca solo lo acoplado a
+NMS/protocolo (**PacketEvents, npc-lib, nanohttpd, Kotlin stdlib**). **Gson, HikariCP y los 4
+drivers JDBC** se declaran en `libraries:` de `plugin.yml` y Paper los baja de Maven Central en
+runtime (sin shadear), manteniendo el jar liviano. Si cambiás versiones, sincronizá
+`plugin.yml` con los `compileOnly` de `build.gradle.kts`.
 
 ---
 
@@ -159,12 +158,16 @@ Mejoras recientes:
 - Limpieza del repo (artefactos de build fuera de VCS, config Fabric muerta eliminada).
 - Seguridad dashboard: bind localhost, sin backdoor admin/admin, lockout, sin CORS `*`,
   PBKDF2 600k, **JSON vía Gson** (sin interpolación de strings ni parseo regex).
-- Fixes de falsos positivos en detección: manejo de teleport/respawn, Spider, Flight, NoFall,
-  AimAssist, KillAura (sweep + noLOS por pared real), Velocity (escudo/agua/etc), Reach (hitbox).
+- Fixes de falsos positivos en detección: Spider, Flight, NoFall, AimAssist, KillAura
+  (sweep + noLOS por pared real), Velocity (escudo/agua/etc), Reach (hitbox).
+- **Registro central de exenciones** (`ExemptionService`): ventana de gracia tras
+  teleport/respawn/join/cambio-de-mundo; el listener salta detecciones durante la gracia.
+- **Compensación de lag** (`LagCompensator`): latencia real por transacciones de PacketEvents
+  (`TransactionLatencyTracker`, con fallback al ping de Bukkit) + relajación de checks por ping
+  alto o TPS bajos.
+- **Packaging**: drivers JDBC + Gson + HikariCP vía `libraries:` de Paper → jar de ~31 MB a ~7.4 MB.
 
 Próximos pasos sugeridos (de la investigación):
-- Migrar a detección con compensación de lag vía transacciones de PacketEvents.
-- Registro central de exenciones (teleport/respawn/knockback/elytra grace) + compensación TPS/ping.
-- VL ponderado por confianza.
+- VL ponderado por confianza por check.
 - Tokens CSRF en el dashboard + cabeceras de seguridad + cookie `Secure` tras TLS.
-- Resolver drivers JDBC vía Paper `PluginLoader` en vez de shadear los 4 (jar hoy ~31 MB).
+- Detección basada en predicción/simulación de física (estilo GrimAC) para los checks de movimiento.
