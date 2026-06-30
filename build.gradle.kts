@@ -40,20 +40,29 @@ repositories {
 
 dependencies {
     compileOnly("io.papermc.paper:paper-api:$paperApiVersion")
+
+    // Shadeadas + relocadas: acopladas a NMS/protocolo, versión pineada.
     implementation("org.nanohttpd:nanohttpd:2.3.1")
-    implementation("com.google.code.gson:gson:2.11.0")
     implementation("io.github.juliarn:npc-lib-bukkit:3.0.0-beta.16")
     implementation("com.github.retrooper:packetevents-spigot:2.13.0")
 
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
 
-    // Database
-    implementation("org.xerial:sqlite-jdbc:3.45.3.0")
-    implementation("com.zaxxer:HikariCP:5.1.0")
-    implementation("com.mysql:mysql-connector-j:8.3.0")
-    implementation("org.postgresql:postgresql:42.7.3")
-    implementation("org.mariadb.jdbc:mariadb-java-client:3.3.3")
+    // Provistas por Paper en runtime vía `libraries:` de plugin.yml (no se shadean
+    // -> jar liviano). compileOnly aquí; deben coincidir con plugin.yml.
+    val runtimeLibs = listOf(
+        "com.google.code.gson:gson:2.11.0",
+        "com.zaxxer:HikariCP:5.1.0",
+        "org.xerial:sqlite-jdbc:3.45.3.0",
+        "com.mysql:mysql-connector-j:8.3.0",
+        "org.postgresql:postgresql:42.7.3",
+        "org.mariadb.jdbc:mariadb-java-client:3.3.3"
+    )
+    runtimeLibs.forEach {
+        compileOnly(it)
+        testRuntimeOnly(it)
+    }
 }
 
 tasks.processResources {
@@ -76,12 +85,6 @@ tasks.shadowJar {
         "license_header.txt"
     )
     relocate("kotlin", "com.evidex.lib.kotlin")
-    relocate("com.google.gson", "com.evidex.lib.gson")
-    relocate("org.sqlite", "com.evidex.lib.sqlite")
-    relocate("com.zaxxer.hikari", "com.evidex.lib.hikari")
-    relocate("com.mysql", "com.evidex.lib.mysql")
-    relocate("org.postgresql", "com.evidex.lib.postgresql")
-    relocate("org.mariadb", "com.evidex.lib.mariadb")
     relocate("com.github.juliarn.npclib", "com.evidex.lib.npclib")
     relocate("io.github.retrooper", "com.evidex.lib.retrooper")
     relocate("com.github.retrooper", "com.evidex.lib.retrooper2")

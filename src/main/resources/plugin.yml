@@ -4,6 +4,15 @@ main: com.evidex.EvidexPlugin
 api-version: '1.21'
 authors: [evidex]
 description: Server-side replay system for hack detection (Paper/Spigot 1.21 - 26.2)
+# Bajadas por Paper desde Maven Central en runtime (no se shadean -> jar liviano).
+# Mantener sincronizado con build.gradle.kts (compileOnly).
+libraries:
+  - com.google.code.gson:gson:2.11.0
+  - com.zaxxer:HikariCP:5.1.0
+  - org.xerial:sqlite-jdbc:3.45.3.0
+  - com.mysql:mysql-connector-j:8.3.0
+  - org.postgresql:postgresql:42.7.3
+  - org.mariadb.jdbc:mariadb-java-client:3.3.3
 commands:
   evidex:
     description: Evidex replay commands
