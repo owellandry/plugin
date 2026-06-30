@@ -216,10 +216,11 @@ class DashboardServer(
         return base + extracted
     }
 
+    // El dashboard sirve su propio frontend same-origin: no se exponen
+    // cabeceras CORS. Antes había 'Access-Control-Allow-Origin: *', que
+    // permitía a cualquier sitio web hablar con la API. Eliminado.
     private fun addCors(resp: Response) {
-        resp.addHeader("Access-Control-Allow-Origin", "*")
-        resp.addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        resp.addHeader("Access-Control-Allow-Headers", "Content-Type, Cookie")
+        // intencionalmente vacío (same-origin)
     }
 
     private fun jsonError(msg: String, status: Response.Status): Response {

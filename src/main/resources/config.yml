@@ -259,4 +259,9 @@ detection:
 dashboard:
   enabled: true
   port: 9090
-  bind-address: 0.0.0.0
+  # SEGURIDAD: el dashboard es HTTP plano (sin TLS) y expone control total.
+  # Por defecto escucha SOLO en localhost. Accedé por túnel SSH:
+  #   ssh -L 9090:127.0.0.1:9090 usuario@tu-servidor
+  # Si necesitás acceso remoto directo, ponelo detrás de un reverse proxy
+  # con HTTPS (nginx/caddy). NO uses 0.0.0.0 sin proxy + TLS.
+  bind-address: 127.0.0.1

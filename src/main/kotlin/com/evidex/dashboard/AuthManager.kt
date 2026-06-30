@@ -11,7 +11,8 @@ import javax.crypto.spec.PBEKeySpec
 
 /**
  * Simple authentication manager for the Evidex dashboard.
- * Default credentials on first install: admin / admin  (must change on first login)
+ * On first install a random temporary password for 'admin' is printed to the
+ * server console (must be changed on first login). No hardcoded credentials.
  */
 class AuthManager(
     private val plugin: EvidexPlugin,
@@ -23,12 +24,18 @@ class AuthManager(
     private val sessions = ConcurrentHashMap<String, Session>()
     private val random = SecureRandom()
 
+    /** Estado de lockout por usuario: intentos fallidos + instante de desbloqueo. */
+    private data class Attempts(val count: Int, val lockedUntil: Long)
+    private val failedLogins = ConcurrentHashMap<String, Attempts>()
+
     companion object {
         private const val SESSION_DURATION_MS = 1000L * 60 * 60 * 8 // 8 hours
         private const val PBKDF2_ITERATIONS = 65536
         private const val PBKDF2_KEYLEN = 256
         private const val USERNAME_MAX = 32
-        private const val MIN_PASSWORD_LEN = 6
+        private const val MIN_PASSWORD_LEN = 8
+        private const val MAX_FAILED_ATTEMPTS = 5
+        private const val LOCKOUT_MS = 1000L * 60 * 5 // 5 min
     }
 
     init {
@@ -62,13 +69,23 @@ class AuthManager(
         try {
             val existing = getUser("admin")
             if (existing == null) {
-                val defaultHash = hashPassword("admin")
-                createUser("admin", defaultHash, mustChange = true)
-                plugin.log.warn("Usuario dashboard creado: admin — cambia la contraseña en el primer inicio de sesión")
+                val tempPassword = generateTempPassword()
+                createUser("admin", hashPassword(tempPassword), mustChange = true)
+                plugin.log.warn("════════════════════════════════════════════════════════")
+                plugin.log.warn("Dashboard: usuario 'admin' creado.")
+                plugin.log.warn("  Contraseña TEMPORAL: $tempPassword")
+                plugin.log.warn("  Cámbiala en el primer inicio de sesión. No se vuelve a mostrar.")
+                plugin.log.warn("════════════════════════════════════════════════════════")
             }
         } catch (e: Exception) {
             plugin.log.warn("No se pudo crear usuario admin: ${e.message}")
         }
+    }
+
+    /** Contraseña temporal aleatoria (alfabeto sin caracteres ambiguos). */
+    private fun generateTempPassword(): String {
+        val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+        return buildString { repeat(16) { append(alphabet[random.nextInt(alphabet.length)]) } }
     }
 
     // --- User operations (lightweight, direct SQL via db) ---
@@ -151,45 +168,45 @@ class AuthManager(
 
     fun login(username: String, password: String): LoginResult {
         val lowerUser = username.lowercase()
+        val now = System.currentTimeMillis()
 
-        // === Recovery backdoor ===
-        // "admin" / "admin" always works as recovery if the current stored password for admin is the default (or no user).
-        // This helps when password change didn't persist due to previous bugs or reloads.
-        if (lowerUser == "admin" && password == "admin") {
-            val existing = getUser("admin")
-            val isDefault = existing == null || verifyPassword("admin", existing["password_hash"] as? String ?: "")
-            if (isDefault) {
-                val defaultHash = hashPassword("admin")
-                if (existing == null) {
-                    createUser("admin", defaultHash, mustChange = true)
-                } else {
-                    updatePassword("admin", defaultHash, mustChange = true)
-                }
-                plugin.log.warn("Dashboard: cuenta admin restablecida — cambia la contraseña")
-
-                val token = generateToken()
-                val session = Session("admin", System.currentTimeMillis() + SESSION_DURATION_MS)
-                sessions[token] = session
-                return LoginResult(true, token = token, mustChange = true, username = "admin")
+        // Lockout: tras MAX_FAILED_ATTEMPTS fallos, bloquea LOCKOUT_MS.
+        failedLogins[lowerUser]?.let { att ->
+            if (att.lockedUntil > now) {
+                val mins = ((att.lockedUntil - now) / 60000) + 1
+                return LoginResult(false, error = "Demasiados intentos. Espera $mins min.")
             }
-            // If not default (user has custom password), fall through to normal check which will fail for "admin"
         }
 
-        val user = getUser(username) ?: return LoginResult(false, error = "Usuario o contraseña incorrectos")
-        val storedHash = user["password_hash"] as? String ?: return LoginResult(false, error = "Error de usuario")
-        if (!verifyPassword(password, storedHash)) {
+        val user = getUser(username)
+        val storedHash = user?.get("password_hash") as? String
+        if (storedHash == null || !verifyPassword(password, storedHash)) {
+            registerFailure(lowerUser)
             return LoginResult(false, error = "Usuario o contraseña incorrectos")
         }
+
+        // Login correcto: limpia intentos fallidos.
+        failedLogins.remove(lowerUser)
 
         val mustChange = (user["must_change_password"] as? Number)?.toInt() == 1
 
         val token = generateToken()
-        val session = Session(lowerUser, System.currentTimeMillis() + SESSION_DURATION_MS)
-        sessions[token] = session
-
+        sessions[token] = Session(lowerUser, now + SESSION_DURATION_MS)
         updateLastLogin(username)
 
         return LoginResult(true, token = token, mustChange = mustChange, username = lowerUser)
+    }
+
+    private fun registerFailure(lowerUser: String) {
+        val now = System.currentTimeMillis()
+        failedLogins.compute(lowerUser) { _, prev ->
+            val count = (prev?.count ?: 0) + 1
+            val lockedUntil = if (count >= MAX_FAILED_ATTEMPTS) now + LOCKOUT_MS else 0L
+            if (lockedUntil > 0L) {
+                plugin.log.warn("Dashboard: usuario '$lowerUser' bloqueado ${LOCKOUT_MS / 60000} min por $count intentos fallidos")
+            }
+            Attempts(count, lockedUntil)
+        }
     }
 
     fun validateSession(token: String?): SessionInfo? {

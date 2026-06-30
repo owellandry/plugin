@@ -70,7 +70,7 @@ class ConfigManager(private val plugin: EvidexPlugin) {
     // Dashboard
     fun isDashboardEnabled(): Boolean = plugin.config.getBoolean("dashboard.enabled", true)
     fun getDashboardPort(): Int = plugin.config.getInt("dashboard.port", 9090)
-    fun getDashboardBindAddress(): String = plugin.config.getString("dashboard.bind-address", "0.0.0.0")!!
+    fun getDashboardBindAddress(): String = plugin.config.getString("dashboard.bind-address", "127.0.0.1")!!
 
     // Detection
     fun isDetectionEnabled(): Boolean = plugin.config.getBoolean("detection.enabled", true)
