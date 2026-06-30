@@ -37,6 +37,24 @@ class ViolationRepository(private val db: Database) {
         return record.copy(id = (id as? Number)?.toLong() ?: 0)
     }
 
+    /** Inserta varias violaciones en un solo lote (usado por el writer async). */
+    fun createBatch(records: List<ViolationRecord>) {
+        if (records.isEmpty()) return
+        val sql = """
+            INSERT INTO violations
+                (player_uuid, player_name, check_name, category, vl_added, vl_total,
+                 severity, info_json, recording_id, world, x, y, z, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        db.executeBatch(sql, records.map { r ->
+            listOf(
+                r.playerUuid, r.playerName, r.checkName, r.category.name,
+                r.vlAdded, r.vlTotal, r.severity.name, r.infoJson,
+                r.recordingId, r.world, r.x, r.y, r.z, r.timestamp
+            )
+        })
+    }
+
     fun findRecent(limit: Int): List<ViolationRecord> {
         val results = db.executeQuery(
             "SELECT * FROM violations ORDER BY timestamp DESC LIMIT ?",

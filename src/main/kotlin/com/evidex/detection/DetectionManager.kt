@@ -37,6 +37,21 @@ class DetectionManager(
 ) {
     private val profiles = ConcurrentHashMap<UUID, PlayerProfile>()
     private var decayTask: BukkitTask? = null
+    private var writerTask: BukkitTask? = null
+
+    /** Escritura async de violaciones: el hilo principal nunca bloquea en la DB. */
+    val violationWriter = ViolationWriter(
+        capacity = 10_000,
+        batchMax = 500,
+        sink = { batch ->
+            try {
+                violationRepository.createBatch(batch)
+            } catch (e: Exception) {
+                plugin.log.warn("No se pudieron persistir ${batch.size} violaciones: ${e.message}")
+            }
+        },
+        onDrop = { n -> if (n % 100L == 0L) plugin.log.warn("Cola de violaciones llena; descartadas=$n (¿DB lenta o caída?)") }
+    )
 
     val gate = DetectionGate(plugin.configManager)
     val buffer = ViolationBuffer(plugin.configManager)
@@ -79,9 +94,13 @@ class DetectionManager(
 
     fun start() {
         if (!isEnabled()) return
-        alert = AlertService(plugin, violationRepository, buffer, gate)
+        alert = AlertService(plugin, violationWriter, buffer, gate)
         plugin.server.pluginManager.registerEvents(DetectionListener(this), plugin)
         latencyTracker.start()
+        // Flush async de violaciones cada 2 s (40 ticks), fuera del hilo principal.
+        writerTask = plugin.server.scheduler.runTaskTimerAsynchronously(
+            plugin, Runnable { violationWriter.flush() }, 40L, 40L
+        )
         val interval = plugin.configManager.getDecayIntervalTicks().coerceAtLeast(20L)
         decayTask = plugin.server.scheduler.runTaskTimer(plugin, Runnable { decayAll() }, interval, interval)
         plugin.log.debug("Detección activa — ${enabledCheckCount()} checks habilitados")
@@ -100,7 +119,15 @@ class DetectionManager(
     fun shutdown() {
         decayTask?.cancel()
         decayTask = null
+        writerTask?.cancel()
+        writerTask = null
         latencyTracker.stop()
+        // Persistir lo que quede en cola antes de apagar (no perder evidencia).
+        try {
+            violationWriter.flushAll()
+        } catch (e: Exception) {
+            plugin.log.warn("Flush final de violaciones falló: ${e.message}")
+        }
         profiles.clear()
     }
 

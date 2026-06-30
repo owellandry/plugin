@@ -1,14 +1,13 @@
 package com.evidex.detection
 
 import com.evidex.EvidexPlugin
-import com.evidex.storage.repository.ViolationRepository
 import com.evidex.util.BukkitExtensions
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 
 class AlertService(
     private val plugin: EvidexPlugin,
-    private val violationRepository: ViolationRepository,
+    private val violationWriter: ViolationWriter,
     private val buffer: ViolationBuffer,
     private val gate: DetectionGate
 ) {
@@ -56,15 +55,16 @@ class AlertService(
             z = loc.z
         )
 
-        val saved = violationRepository.create(record)
+        // Persistencia asíncrona: encolar es O(1) y no bloquea el hilo principal.
+        violationWriter.enqueue(record)
         plugin.recordingManager.noteViolationForPlayer(player.name, scaled.checkName, vlTotal)
         plugin.recordingManager.tagSuspiciousEvent(
             player.name,
             "flag:${scaled.checkName}",
             infoJson
         )
-        notifyStaff(saved)
-        return saved
+        notifyStaff(record)
+        return record
     }
 
     private fun notifyStaff(record: ViolationRecord) {

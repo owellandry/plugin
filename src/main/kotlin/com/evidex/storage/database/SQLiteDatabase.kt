@@ -9,8 +9,22 @@ class SQLiteDatabase(private val config: ConfigManager) : AbstractDatabase() {
 
     private var connection: Connection? = null
 
+    // SQLite usa UNA sola conexión compartida y un Connection JDBC no es
+    // thread-safe. Serializamos todo el acceso para que el writer async de
+    // violaciones, el dashboard y el hilo principal nunca la toquen a la vez.
+    private val lock = Any()
+
     override fun getConnection(): Connection =
         connection ?: throw IllegalStateException("SQLite database not connected")
+
+    override fun executeUpdate(sql: String, params: List<Any?>): Int =
+        synchronized(lock) { super.executeUpdate(sql, params) }
+
+    override fun executeQuery(sql: String, params: List<Any?>): List<Map<String, Any?>> =
+        synchronized(lock) { super.executeQuery(sql, params) }
+
+    override fun executeBatch(sql: String, paramsList: List<List<Any?>>): IntArray =
+        synchronized(lock) { super.executeBatch(sql, paramsList) }
 
     override val isConnected: Boolean
         get() = connection?.isClosed?.not() ?: false
