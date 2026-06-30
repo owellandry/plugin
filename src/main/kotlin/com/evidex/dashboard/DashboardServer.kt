@@ -30,13 +30,14 @@ class DashboardServer(
         if (method == Method.OPTIONS) {
             val resp = newFixedLengthResponse(Response.Status.OK, "text/plain", "")
             addCors(resp)
-            return resp
+            return securityHeaders(resp)
         }
 
-        return when {
+        val resp = when {
             uri.startsWith("/api/") -> handleApi(session, uri, method)
             else -> handleStatic(uri)
         }
+        return securityHeaders(resp)
     }
 
     private fun handleApi(session: IHTTPSession, uri: String, method: Method): Response {
@@ -69,7 +70,12 @@ class DashboardServer(
                             "username" to result.username
                         ))
                         val resp = newFixedLengthResponse(Response.Status.OK, "application/json", json)
-                        resp.addHeader("Set-Cookie", "evidex_session=${result.token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800")
+                        val https = session.headers["x-forwarded-proto"]?.equals("https", ignoreCase = true) == true
+                        val secure = if (https) "; Secure" else ""
+                        resp.addHeader(
+                            "Set-Cookie",
+                            "evidex_session=${result.token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800$secure"
+                        )
                         addCors(resp)
                         resp
                     } else {
@@ -216,6 +222,25 @@ class DashboardServer(
     // permitía a cualquier sitio web hablar con la API. Eliminado.
     private fun addCors(resp: Response) {
         // intencionalmente vacío (same-origin)
+    }
+
+    /**
+     * Cabeceras de seguridad en TODA respuesta. La CSP permite 'unsafe-inline'
+     * porque el frontend actual usa manejadores onclick y estilos inline; aun
+     * así bloquea recursos externos, framing (clickjacking) y object/base-uri.
+     * Endurecer a CSP estricta requiere mover los onclick a addEventListener.
+     */
+    private fun securityHeaders(resp: Response): Response {
+        resp.addHeader("X-Content-Type-Options", "nosniff")
+        resp.addHeader("X-Frame-Options", "DENY")
+        resp.addHeader("Referrer-Policy", "no-referrer")
+        resp.addHeader(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; " +
+                "style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
+                "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        )
+        return resp
     }
 
     private fun jsonError(msg: String, status: Response.Status): Response {
