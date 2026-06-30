@@ -166,8 +166,13 @@ Mejoras recientes:
   (`TransactionLatencyTracker`, con fallback al ping de Bukkit) + relajación de checks por ping
   alto o TPS bajos.
 - **Packaging**: drivers JDBC + Gson + HikariCP vía `libraries:` de Paper → jar de ~31 MB a ~7.4 MB.
+- **Persistencia async** (`ViolationWriter`): el hilo principal ya no bloquea en la DB; las
+  violaciones se encolan (O(1)) y se escriben en lotes cada 2 s en un task async. SQLite
+  serializa su conexión única para ser thread-safe con el writer + dashboard.
+- **Headers de seguridad** del dashboard (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`)
+  y cookie de sesión `Secure` tras TLS.
 
 Próximos pasos sugeridos (de la investigación):
 - VL ponderado por confianza por check.
-- Tokens CSRF en el dashboard + cabeceras de seguridad + cookie `Secure` tras TLS.
+- CSP estricta (mover `onclick` inline a `addEventListener`) + tokens CSRF en endpoints destructivos.
 - Detección basada en predicción/simulación de física (estilo GrimAC) para los checks de movimiento.
