@@ -41,6 +41,7 @@ repositories {
 dependencies {
     compileOnly("io.papermc.paper:paper-api:$paperApiVersion")
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("com.google.code.gson:gson:2.11.0")
     implementation("io.github.juliarn:npc-lib-bukkit:3.0.0-beta.16")
     implementation("com.github.retrooper:packetevents-spigot:2.13.0")
 
@@ -75,6 +76,7 @@ tasks.shadowJar {
         "license_header.txt"
     )
     relocate("kotlin", "com.evidex.lib.kotlin")
+    relocate("com.google.gson", "com.evidex.lib.gson")
     relocate("org.sqlite", "com.evidex.lib.sqlite")
     relocate("com.zaxxer.hikari", "com.evidex.lib.hikari")
     relocate("com.mysql", "com.evidex.lib.mysql")

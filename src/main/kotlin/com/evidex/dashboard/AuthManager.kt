@@ -30,7 +30,7 @@ class AuthManager(
 
     companion object {
         private const val SESSION_DURATION_MS = 1000L * 60 * 60 * 8 // 8 hours
-        private const val PBKDF2_ITERATIONS = 65536
+        private const val PBKDF2_ITERATIONS = 600_000 // OWASP 2024 floor para PBKDF2-HMAC-SHA256
         private const val PBKDF2_KEYLEN = 256
         private const val USERNAME_MAX = 32
         private const val MIN_PASSWORD_LEN = 8

@@ -62,7 +62,12 @@ class DashboardServer(
                     val result = authManager.login(uname, pw)
                     if (result.success && result.token != null) {
                         plugin.log.info("Dashboard: sesión iniciada (${result.username})")
-                        val json = """{"success":true,"token":"${result.token}","mustChange":${result.mustChange},"username":"${result.username}"}"""
+                        val json = Json.stringify(Json.obj(
+                            "success" to true,
+                            "token" to result.token,
+                            "mustChange" to result.mustChange,
+                            "username" to result.username
+                        ))
                         val resp = newFixedLengthResponse(Response.Status.OK, "application/json", json)
                         resp.addHeader("Set-Cookie", "evidex_session=${result.token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=28800")
                         addCors(resp)
@@ -70,7 +75,8 @@ class DashboardServer(
                     } else {
                         plugin.log.debug("Dashboard: inicio de sesión fallido ($uname)")
                         val msg = result.error ?: "Usuario o contraseña incorrectos"
-                        val r = newFixedLengthResponse(Response.Status.OK, "application/json", """{"success":false,"error":"$msg"}""")
+                        val json = Json.stringify(Json.obj("success" to false, "error" to msg))
+                        val r = newFixedLengthResponse(Response.Status.OK, "application/json", json)
                         addCors(r)
                         r
                     }
@@ -201,19 +207,8 @@ class DashboardServer(
         val postData = body["postData"]?.trim() ?: return base
         if (!postData.startsWith("{")) return base
 
-        val extracted = mutableMapOf<String, String>()
-        try {
-            val regex = """"(\w+)"\s*:\s*(?:"([^"]*)"|\b(true|false|null|-?\d+\.?\d*)\b)""".toRegex()
-            regex.findAll(postData).forEach { m ->
-                val key = m.groupValues[1]
-                val quoted = m.groupValues[2]
-                val unquoted = m.groupValues[3]
-                var value = if (quoted.isNotEmpty()) quoted else unquoted
-                if (value == "null" || value == "true" || value == "false") value = ""
-                extracted[key] = value
-            }
-        } catch (_: Exception) {}
-        return base + extracted
+        // Parseo JSON real (Gson) en vez de regex frágil.
+        return base + Json.parseObjectToStringMap(postData)
     }
 
     // El dashboard sirve su propio frontend same-origin: no se exponen
@@ -224,7 +219,8 @@ class DashboardServer(
     }
 
     private fun jsonError(msg: String, status: Response.Status): Response {
-        val r = newFixedLengthResponse(status, "application/json", """{"success":false,"error":"$msg"}""")
+        val json = Json.stringify(Json.obj("success" to false, "error" to msg))
+        val r = newFixedLengthResponse(status, "application/json", json)
         addCors(r)
         return r
     }
