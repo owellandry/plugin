@@ -15,6 +15,8 @@ import org.bukkit.event.inventory.InventoryClickEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerMoveEvent
 import org.bukkit.event.player.PlayerQuitEvent
+import org.bukkit.event.player.PlayerTeleportEvent
+import org.bukkit.event.player.PlayerRespawnEvent
 
 class DetectionListener(private val manager: DetectionManager) : Listener {
 
@@ -187,6 +189,29 @@ class DetectionListener(private val manager: DetectionManager) : Listener {
             }
             else -> {}
         }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    fun onTeleport(event: PlayerTeleportEvent) {
+        // Tras un teleport (ender pearl, /tp, portal, chorus, etc.) la distancia
+        // recorrida NO es movimiento real. Reseteamos el estado posicional para
+        // que el primer PlayerMoveEvent posterior no dispare Speed/Blink en falso.
+        val profile = manager.getProfile(event.player.uniqueId) ?: return
+        resetPositional(profile, event.to)
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    fun onRespawn(event: PlayerRespawnEvent) {
+        val profile = manager.getProfile(event.player.uniqueId) ?: return
+        resetPositional(profile, event.respawnLocation)
+    }
+
+    private fun resetPositional(profile: PlayerProfile, to: org.bukkit.Location?) {
+        profile.lastLocation = to?.clone()
+        profile.airTicks = 0
+        profile.wasInAir = false
+        profile.maxFallDuringAir = 0f
+        profile.pendingFallDistance = 0.0
     }
 
     @EventHandler

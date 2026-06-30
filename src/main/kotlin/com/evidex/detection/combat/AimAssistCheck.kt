@@ -19,7 +19,7 @@ class AimAssistCheck(private val config: ConfigManager) : DetectionCheck {
         if (!config.isCheckEnabled(name)) return null
         if (player.gameMode == GameMode.CREATIVE) return null
 
-        val yawDelta = kotlin.math.abs(player.location.yaw - profile.lastYaw)
+        val yawDelta = angleDiff(player.location.yaw, profile.lastYaw)
         val pitchDelta = kotlin.math.abs(player.location.pitch - profile.lastPitch)
         val snapThreshold = config.getCheckSnapDegrees(name)
 
@@ -46,4 +46,11 @@ class AimAssistCheck(private val config: ConfigManager) : DetectionCheck {
     }
 
     override fun check(player: Player, profile: PlayerProfile): ViolationResult? = null
+
+    /** Diferencia angular menor entre dos yaw, manejando el wrap en ±180°. */
+    private fun angleDiff(a: Float, b: Float): Float {
+        var d = kotlin.math.abs(a - b) % 360f
+        if (d > 180f) d = 360f - d
+        return d
+    }
 }
