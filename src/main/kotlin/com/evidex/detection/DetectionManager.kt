@@ -22,6 +22,8 @@ import com.evidex.detection.player.FastEatCheck
 import com.evidex.detection.player.FastInventoryCheck
 import com.evidex.detection.player.ScaffoldCheck
 import com.evidex.detection.player.XRayCheck
+import com.evidex.detection.lag.LagCompensator
+import com.evidex.detection.lag.TransactionLatencyTracker
 import com.evidex.storage.repository.ViolationRepository
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
@@ -41,6 +43,18 @@ class DetectionManager(
     lateinit var alert: AlertService
         private set
 
+    /** Exenciones transitorias (teleport/respawn/join/…). Consultado por el listener. */
+    val exemptions = ExemptionService()
+
+    /** Medición de RTT por transacciones de PacketEvents (con fallback a ping). */
+    val latencyTracker = TransactionLatencyTracker(plugin)
+
+    /** Compensación de lag (RTT + TPS) usada por los checks. */
+    val lagCompensator = LagCompensator(
+        plugin.configManager,
+        latencyTracker
+    ) { plugin.server.tps.firstOrNull() ?: 20.0 }
+
     val flightCheck = FlightCheck(plugin.configManager)
     val speedCheck = SpeedCheck(plugin.configManager)
     val jesusCheck = JesusCheck(plugin.configManager)
@@ -49,7 +63,7 @@ class DetectionManager(
     val spiderCheck = SpiderCheck(plugin.configManager)
     val timerCheck = TimerCheck(plugin.configManager)
     val blinkCheck = BlinkCheck(plugin.configManager)
-    val reachCheck = ReachCheck(plugin.configManager) { gate.lagReachBuffer(it) }
+    val reachCheck = ReachCheck(plugin.configManager) { lagCompensator.reachBuffer(it) }
     val killAuraCheck = KillAuraCheck(plugin.configManager)
     val autoClickCheck = AutoClickCheck(plugin.configManager)
     val aimAssistCheck = AimAssistCheck(plugin.configManager)
@@ -67,6 +81,7 @@ class DetectionManager(
         if (!isEnabled()) return
         alert = AlertService(plugin, violationRepository, buffer, gate)
         plugin.server.pluginManager.registerEvents(DetectionListener(this), plugin)
+        latencyTracker.start()
         val interval = plugin.configManager.getDecayIntervalTicks().coerceAtLeast(20L)
         decayTask = plugin.server.scheduler.runTaskTimer(plugin, Runnable { decayAll() }, interval, interval)
         plugin.log.debug("Detección activa — ${enabledCheckCount()} checks habilitados")
@@ -85,6 +100,7 @@ class DetectionManager(
     fun shutdown() {
         decayTask?.cancel()
         decayTask = null
+        latencyTracker.stop()
         profiles.clear()
     }
 
@@ -105,6 +121,8 @@ class DetectionManager(
 
     fun remove(uuid: UUID) {
         profiles.remove(uuid)
+        exemptions.clear(uuid)
+        latencyTracker.remove(uuid)
     }
 
     fun getLiveVl(): List<LivePlayerVl> =

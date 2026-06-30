@@ -20,6 +20,11 @@ import org.bukkit.event.player.PlayerRespawnEvent
 
 class DetectionListener(private val manager: DetectionManager) : Listener {
 
+    companion object {
+        private const val TELEPORT_GRACE_MS = 1500L
+        private const val RESPAWN_GRACE_MS = 2000L
+    }
+
     private val movementChecks get() = listOf(
         manager.flightCheck,
         manager.speedCheck,
@@ -59,17 +64,26 @@ class DetectionListener(private val manager: DetectionManager) : Listener {
 
         profile.updateFallState(BukkitExtensions.isOnGround(player), player.fallDistance)
 
-        for (check in movementChecks) {
-            check.check(player, profile)?.let { flag(player, profile, it) }
-        }
+        // En ventana de gracia (teleport/respawn/join) o bajo lag (ping alto/TPS
+        // bajos) NO evaluamos: solo actualizamos estado para no romper el delta
+        // del siguiente move. Esto centraliza la evitación de falsos positivos.
+        val skip = manager.exemptions.isExempt(player.uniqueId) ||
+            manager.lagCompensator.shouldSoften(player)
 
-        if (BukkitExtensions.isOnGround(player) && profile.pendingFallDistance > 0) {
-            val sinceDamage = System.currentTimeMillis() - profile.lastFallDamageMs
-            if (sinceDamage > 500) {
-                manager.noFallCheck.checkLand(player, profile)?.let { flag(player, profile, it) }
+        if (!skip) {
+            for (check in movementChecks) {
+                check.check(player, profile)?.let { flag(player, profile, it) }
             }
-            profile.pendingFallDistance = 0.0
+
+            if (BukkitExtensions.isOnGround(player) && profile.pendingFallDistance > 0) {
+                val sinceDamage = System.currentTimeMillis() - profile.lastFallDamageMs
+                if (sinceDamage > 500) {
+                    manager.noFallCheck.checkLand(player, profile)?.let { flag(player, profile, it) }
+                }
+            }
         }
+        // El estado de caída se consume siempre (haya o no check) para no arrastrarlo.
+        if (BukkitExtensions.isOnGround(player)) profile.pendingFallDistance = 0.0
 
         profile.lastLocation = to.clone()
         profile.lastOnGround = BukkitExtensions.isOnGround(player)
@@ -85,10 +99,14 @@ class DetectionListener(private val manager: DetectionManager) : Listener {
         val targetLoc = event.entity.location.add(0.0, event.entity.height / 2.0, 0.0)
         val distance = eye.distance(targetLoc)
 
-        // Los hits de barrido (sweep) golpean entidades secundarias que el jugador
-        // NO atacó directamente -> no son señal de combate (FP de killaura/reach/aim).
+        // No evaluamos combate si: es un hit de barrido (golpea entidades
+        // secundarias que el jugador NO atacó directamente), está en ventana de
+        // gracia, o hay lag (ping alto/TPS bajos). Aun así se etiqueta el evento.
         val sweep = event.cause == EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK
-        if (!sweep) {
+        val skipCombat = sweep ||
+            manager.exemptions.isExempt(attacker.uniqueId) ||
+            manager.lagCompensator.shouldSoften(attacker)
+        if (!skipCombat) {
             manager.reachCheck.checkAttack(attacker, profile, event.entity, distance)?.let {
                 flag(attacker, profile, it)
             }
@@ -199,16 +217,19 @@ class DetectionListener(private val manager: DetectionManager) : Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     fun onTeleport(event: PlayerTeleportEvent) {
         // Tras un teleport (ender pearl, /tp, portal, chorus, etc.) la distancia
-        // recorrida NO es movimiento real. Reseteamos el estado posicional para
-        // que el primer PlayerMoveEvent posterior no dispare Speed/Blink en falso.
-        val profile = manager.getProfile(event.player.uniqueId) ?: return
-        resetPositional(profile, event.to)
+        // recorrida NO es movimiento real: ventana de gracia + reset posicional.
+        val uuid = event.player.uniqueId
+        val crossWorld = event.from.world?.uid != event.to.world?.uid
+        val reason = if (crossWorld) ExemptReason.WORLD_CHANGE else ExemptReason.TELEPORT
+        manager.exemptions.grant(uuid, reason, TELEPORT_GRACE_MS)
+        manager.getProfile(uuid)?.let { resetPositional(it, event.to) }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     fun onRespawn(event: PlayerRespawnEvent) {
-        val profile = manager.getProfile(event.player.uniqueId) ?: return
-        resetPositional(profile, event.respawnLocation)
+        val uuid = event.player.uniqueId
+        manager.exemptions.grant(uuid, ExemptReason.RESPAWN, RESPAWN_GRACE_MS)
+        manager.getProfile(uuid)?.let { resetPositional(it, event.respawnLocation) }
     }
 
     private fun resetPositional(profile: PlayerProfile, to: org.bukkit.Location?) {
@@ -224,6 +245,8 @@ class DetectionListener(private val manager: DetectionManager) : Listener {
         val profile = manager.getOrCreate(event.player)
         profile.lastYaw = event.player.location.yaw
         profile.lastPitch = event.player.location.pitch
+        val graceMs = manager.plugin.configManager.getJoinGraceSeconds() * 1000L
+        manager.exemptions.grant(event.player.uniqueId, ExemptReason.JOIN, graceMs)
     }
 
     @EventHandler

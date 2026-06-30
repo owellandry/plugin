@@ -89,6 +89,11 @@ class ConfigManager(private val plugin: EvidexPlugin) {
         plugin.config.getDouble("detection.vl-decay-factor", 0.85).coerceIn(0.5, 0.99)
     fun isLagCompensationEnabled(): Boolean = plugin.config.getBoolean("detection.lag-compensation.enabled", true)
     fun getLagReachPerMs(): Double = plugin.config.getDouble("detection.lag-compensation.reach-per-ms", 0.003)
+    fun isLagUseTransactions(): Boolean = plugin.config.getBoolean("detection.lag-compensation.use-transactions", true)
+    fun getLagTransactionIntervalTicks(): Long =
+        plugin.config.getLong("detection.lag-compensation.transaction-interval-ticks", 20).coerceAtLeast(10)
+    fun getLagMaxPingMs(): Int = plugin.config.getInt("detection.lag-compensation.max-ping-ms", 400).coerceAtLeast(50)
+    fun getLagMinTps(): Double = plugin.config.getDouble("detection.lag-compensation.min-tps", 18.0).coerceIn(5.0, 20.0)
     fun isAutoRecordOnFlag(): Boolean = plugin.config.getBoolean("detection.auto-record-on-flag", true)
     fun isAutoRecordOnFirstFlag(): Boolean = plugin.config.getBoolean("detection.auto-record-on-first-flag", true)
     fun getAutoRecordMinVl(): Int = plugin.config.getInt("detection.auto-record-min-vl", 5)

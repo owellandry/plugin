@@ -24,12 +24,6 @@ class DetectionGate(private val config: ConfigManager) {
         return grace > 0 && System.currentTimeMillis() - profile.joinedAt < grace
     }
 
-    fun lagReachBuffer(player: Player): Double {
-        if (!config.isLagCompensationEnabled()) return 0.0
-        val ping = player.ping.coerceAtLeast(0)
-        return (ping / 1000.0) * config.getLagReachPerMs()
-    }
-
     fun scaledVl(base: Int): Int {
         val mult = config.getSensitivityMultiplier()
         return (base * mult).toInt().coerceAtLeast(1)

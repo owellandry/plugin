@@ -114,6 +114,15 @@ detection:
   lag-compensation:
     enabled: true
     reach-per-ms: 0.003
+    # Mide latencia real con transacciones de PacketEvents (ping/pong). Si falla
+    # o está apagado, usa el ping de Bukkit como respaldo.
+    use-transactions: true
+    transaction-interval-ticks: 20
+    # Por encima de este ping (ms) se relajan/saltan los checks de movimiento
+    # para no marcar lag como trampa.
+    max-ping-ms: 400
+    # Por debajo de estos TPS del servidor se relajan/saltan los checks.
+    min-tps: 18.0
   auto-record-on-flag: true
   auto-record-on-first-flag: true
   auto-record-min-vl: 5
