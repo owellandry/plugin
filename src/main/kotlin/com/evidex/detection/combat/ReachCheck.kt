@@ -18,6 +18,12 @@ class ReachCheck(
     override val name = "reach"
     override val category = ViolationCategory.COMBAT
 
+    companion object {
+        // La distancia se mide al CENTRO de la entidad, no al borde del hitbox.
+        // Margen para no marcar golpes legítimos al filo del hitbox (FP).
+        private const val HITBOX_TOLERANCE = 0.3
+    }
+
     fun checkAttack(player: Player, profile: PlayerProfile, target: Entity, distance: Double): ViolationResult? {
         if (!config.isCheckEnabled(name)) return null
         if (player.gameMode == GameMode.CREATIVE) return null
@@ -26,7 +32,7 @@ class ReachCheck(
         profile.lastAttackTargetUuid = target.uniqueId
         profile.recordAttack(target.uniqueId)
 
-        val maxReach = config.getCheckMaxReach(name) + lagBuffer(player)
+        val maxReach = config.getCheckMaxReach(name) + lagBuffer(player) + HITBOX_TOLERANCE
         if (distance <= maxReach) return null
 
         return ViolationResult(

@@ -25,7 +25,10 @@ class KillAuraCheck(private val config: ConfigManager) : DetectionCheck {
         val maxAngle = config.getCheckMaxAngle(name)
         val angle = DetectionUtils.angleToEntity(player, target)
         val multiTarget = profile.distinctRecentTargets() >= config.getCheckMaxTargets(name)
-        val noLos = !player.hasLineOfSight(target)
+        // noLOS solo cuenta si hay BLOQUES sólidos de por medio (pared real), no
+        // por la oclusión del centro del hitbox al pegarle a una pierna/borde (FP).
+        val noLos = !player.hasLineOfSight(target) &&
+            DetectionUtils.countSolidBlocksBetween(player, target) >= 1
         val behind = angle > maxAngle
 
         if (!multiTarget && !behind && !noLos) return null

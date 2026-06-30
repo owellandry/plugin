@@ -85,17 +85,22 @@ class DetectionListener(private val manager: DetectionManager) : Listener {
         val targetLoc = event.entity.location.add(0.0, event.entity.height / 2.0, 0.0)
         val distance = eye.distance(targetLoc)
 
-        manager.reachCheck.checkAttack(attacker, profile, event.entity, distance)?.let {
-            flag(attacker, profile, it)
-        }
-        manager.killAuraCheck.checkAttack(attacker, profile, event.entity)?.let {
-            flag(attacker, profile, it)
-        }
-        manager.aimAssistCheck.checkAttack(attacker, profile, event.entity)?.let {
-            flag(attacker, profile, it)
-        }
-        manager.wallHitCheck.checkAttack(attacker, profile, event.entity)?.let {
-            flag(attacker, profile, it)
+        // Los hits de barrido (sweep) golpean entidades secundarias que el jugador
+        // NO atacó directamente -> no son señal de combate (FP de killaura/reach/aim).
+        val sweep = event.cause == EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK
+        if (!sweep) {
+            manager.reachCheck.checkAttack(attacker, profile, event.entity, distance)?.let {
+                flag(attacker, profile, it)
+            }
+            manager.killAuraCheck.checkAttack(attacker, profile, event.entity)?.let {
+                flag(attacker, profile, it)
+            }
+            manager.aimAssistCheck.checkAttack(attacker, profile, event.entity)?.let {
+                flag(attacker, profile, it)
+            }
+            manager.wallHitCheck.checkAttack(attacker, profile, event.entity)?.let {
+                flag(attacker, profile, it)
+            }
         }
 
         manager.plugin.recordingManager.tagSuspiciousEvent(
